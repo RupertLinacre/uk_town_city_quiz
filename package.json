@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "deploy": "npm run build && gh-pages -d dist -r https://github.com/RupertLinacre/country_quiz.git",
+    "deploy": "npm run build && gh-pages -d dist -r https://github.com/RupertLinacre/uk_town_city_quiz.git",
     "preview": "vite preview"
   },
   "dependencies": {
