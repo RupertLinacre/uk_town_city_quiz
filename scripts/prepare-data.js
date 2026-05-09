@@ -3,6 +3,10 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { csvParse } from 'd3-dsv'
+import GeoJSONReader from 'jsts/org/locationtech/jts/io/GeoJSONReader.js'
+import GeoJSONWriter from 'jsts/org/locationtech/jts/io/GeoJSONWriter.js'
+import BufferOp from 'jsts/org/locationtech/jts/operation/buffer/BufferOp.js'
+import TopologyPreservingSimplifier from 'jsts/org/locationtech/jts/simplify/TopologyPreservingSimplifier.js'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const paths = {
@@ -196,6 +200,11 @@ const SCOTTISH_CONSOLIDATION_BY_CODE = new Map(
   SCOTTISH_CONSOLIDATIONS.flatMap((group) => group.componentCodes.map((code) => [code, group])),
 )
 const SIMPLIFY_TOLERANCE_METRES = 85
+const QUIZ_BUFFER_METRES = 750
+const QUIZ_BUFFER_QUADRANT_SEGMENTS = 3
+const QUIZ_SIMPLIFY_TOLERANCE_METRES = 220
+const geoJsonReader = new GeoJSONReader()
+const geoJsonWriter = new GeoJSONWriter()
 
 function normalizeName(value) {
   return (value ?? '')
@@ -510,6 +519,20 @@ function transformGeometry(geometry, transformPoint) {
   }
 }
 
+function createQuizGeometry(geometry) {
+  const jstsGeometry = geoJsonReader.read(geometry)
+  const buffered = BufferOp.bufferOp(jstsGeometry, QUIZ_BUFFER_METRES, QUIZ_BUFFER_QUADRANT_SEGMENTS)
+  const simplified = TopologyPreservingSimplifier.simplify(buffered, QUIZ_SIMPLIFY_TOLERANCE_METRES)
+  const cleaned = BufferOp.bufferOp(simplified, 0)
+  const output = geoJsonWriter.write(cleaned)
+
+  if (output.type !== 'Polygon' && output.type !== 'MultiPolygon') {
+    throw new Error(`Expected polygonal quiz geometry, got ${output.type}`)
+  }
+
+  return output
+}
+
 function geometryBbox(geometry) {
   const bbox = [Infinity, Infinity, -Infinity, -Infinity]
 
@@ -521,6 +544,20 @@ function geometryBbox(geometry) {
   })
 
   return bbox
+}
+
+function geometryPointCount(geometry) {
+  let count = 0
+
+  forEachPoint(geometry, () => {
+    count += 1
+  })
+
+  return count
+}
+
+function geometryPartCount(geometry) {
+  return geometry.type === 'Polygon' ? 1 : geometry.coordinates.length
 }
 
 function forEachPoint(geometry, callback) {
@@ -877,6 +914,12 @@ function main() {
   const rawFeatures = []
   const londonGeometries = []
   const scottishConsolidationGeometries = new Map(SCOTTISH_CONSOLIDATIONS.map((group) => [group.code, []]))
+  const geometryStats = {
+    inputPoints: 0,
+    outputPoints: 0,
+    inputParts: 0,
+    outputParts: 0,
+  }
 
   for (const row of readCsv(paths.osBuiltUpAreas)) {
     const code = rowValue(row, 'gsscode')
@@ -990,9 +1033,15 @@ function main() {
       const county = countyForFeature(feature, counties)
       const isTop100 = top100Codes.has(feature.properties.code)
       const populationRank = populationRankByCode.get(feature.properties.code) ?? null
-      const geometry = transformGeometry(feature.geometryBritishGrid, osGridToWgs84)
-      const centroid = osGridToWgs84(...feature.properties.centroidBritishGrid)
+      const quizGeometryBritishGrid = createQuizGeometry(feature.geometryBritishGrid)
+      const geometry = transformGeometry(quizGeometryBritishGrid, osGridToWgs84)
+      const centroid = osGridToWgs84(...largestRingCentroid(quizGeometryBritishGrid))
       const aliases = featureAliases(feature)
+
+      geometryStats.inputPoints += geometryPointCount(feature.geometryBritishGrid)
+      geometryStats.outputPoints += geometryPointCount(quizGeometryBritishGrid)
+      geometryStats.inputParts += geometryPartCount(feature.geometryBritishGrid)
+      geometryStats.outputParts += geometryPartCount(quizGeometryBritishGrid)
 
       return {
         type: 'Feature',
@@ -1054,6 +1103,9 @@ function main() {
       bua24: lookups.byBuaCode.size,
       scotlandSettlements: lookups.byScottishName.size,
     })}; matched ${matchedCount}, unmatched ${unmatchedCount}`,
+  )
+  console.log(
+    `Quiz geometry transform: ${geometryStats.inputPoints.toLocaleString('en-GB')} -> ${geometryStats.outputPoints.toLocaleString('en-GB')} points; ${geometryStats.inputParts.toLocaleString('en-GB')} -> ${geometryStats.outputParts.toLocaleString('en-GB')} polygon parts`,
   )
   console.log(`Top 100 starts: ${populatedFeatures.slice(0, 10).map((feature) => feature.properties.name).join(', ')}`)
 }

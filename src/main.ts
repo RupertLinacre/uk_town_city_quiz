@@ -329,7 +329,7 @@ async function bootstrap(): Promise<void> {
   let mapPan: [number, number] = [0, 0]
   let mapProjection: GeoProjection = geoMercator()
   let renderMapFrameId: number | null = null
-  let dragStart: { pointer: [number, number]; pan: [number, number] } | null = null
+  let dragStart: { pointerId: number; pointer: [number, number]; pan: [number, number] } | null = null
 
   function elapsedMilliseconds(): number {
     return quizStartedAt === null ? 0 : Math.max(0, Date.now() - quizStartedAt)
@@ -557,6 +557,78 @@ async function bootstrap(): Promise<void> {
     return tiles
   }
 
+  function areaBoundaryClass(area: BuiltUpAreaFeature): string {
+    const code = area.properties.code
+    const solved = solvedAreaCodes.has(code)
+    const extra = extraFoundAreaCodes.has(code)
+
+    return [
+      'area-boundary',
+      area.properties.isTop100 ? 'area-boundary--quiz' : 'area-boundary--extra',
+      solved ? 'area-boundary--solved' : 'area-boundary--unsolved',
+      revealedAreaCodes.has(code) ? 'area-boundary--revealed' : '',
+      extra ? 'area-boundary--extra-found' : '',
+      hoveredAreaCode === code ? 'area-boundary--hovered' : '',
+    ].filter(Boolean).join(' ')
+  }
+
+  function renderHoverState(): void {
+    const bounds = mapFrame.getBoundingClientRect()
+    const width = Math.max(1, bounds.width)
+    const height = Math.max(1, bounds.height)
+    const svg = select(mapFrame).select<SVGSVGElement>('svg.uk-map')
+
+    if (svg.empty()) {
+      return
+    }
+
+    svg
+      .selectAll<SVGPathElement, BuiltUpAreaFeature>('path.area-boundary')
+      .attr('class', areaBoundaryClass)
+
+    renderMapTooltip(width, height)
+  }
+
+  function renderMapTooltip(width: number, height: number): void {
+    const hoveredArea = hoveredAreaCode ? areaByCode.get(hoveredAreaCode) : null
+    const svg = select(mapFrame).select<SVGSVGElement>('svg.uk-map')
+
+    svg
+      .selectAll<SVGGElement, BuiltUpAreaFeature>('g.map-tooltip')
+      .data(hoveredArea && tooltipPoint ? [hoveredArea] : [], (area) => area.properties.code)
+      .join(
+        (enter) => {
+          const group = enter.append('g').attr('class', 'map-tooltip')
+          group.append('rect').attr('rx', 8)
+          group.append('text')
+          return group
+        },
+        (update) => update,
+        (exit) => exit.remove(),
+      )
+      .attr('transform', () => {
+        const [x, y] = tooltipPoint ?? [0, 0]
+        return `translate(${Math.min(width - 220, Math.max(18, x + 14))} ${Math.min(height - 38, Math.max(18, y - 40))})`
+      })
+      .each(function (area) {
+        const group = select(this)
+        const code = area.properties.code
+        const canShowName = solvedAreaCodes.has(code) || revealedAreaCodes.has(code) || extraFoundAreaCodes.has(code)
+        const label = canShowName
+          ? `${area.properties.name} · ${formatNumber(area.properties.population)}`
+          : `Population ${formatNumber(area.properties.population)}`
+        const text = group.select<SVGTextElement>('text')
+          .attr('x', 10)
+          .attr('y', 18)
+          .text(label)
+
+        const textLength = text.node()?.getComputedTextLength() ?? 100
+        group.select<SVGRectElement>('rect')
+          .attr('width', textLength + 20)
+          .attr('height', 28)
+      })
+  }
+
   function renderMap(): void {
     const bounds = mapFrame.getBoundingClientRect()
     const width = Math.max(1, bounds.width)
@@ -600,6 +672,7 @@ async function bootstrap(): Promise<void> {
       .attr('width', (tile) => tile.bottomRight[0] - tile.topLeft[0])
       .attr('height', (tile) => tile.bottomRight[1] - tile.topLeft[1])
       .attr('preserveAspectRatio', 'none')
+      .lower()
 
     viewport
       .selectAll<SVGPathElement, BoundaryFeature>('path.country-boundary')
@@ -621,73 +694,38 @@ async function bootstrap(): Promise<void> {
       .selectAll<SVGPathElement, BuiltUpAreaFeature>('path.area-boundary')
       .data(visibleAreaFeatures(), (area) => area.properties.code)
       .join('path')
-      .attr('class', (area) => {
-        const code = area.properties.code
-        const solved = solvedAreaCodes.has(code)
-        const extra = extraFoundAreaCodes.has(code)
-        return [
-          'area-boundary',
-          area.properties.isTop100 ? 'area-boundary--quiz' : 'area-boundary--extra',
-          solved ? 'area-boundary--solved' : 'area-boundary--unsolved',
-          revealedAreaCodes.has(code) ? 'area-boundary--revealed' : '',
-          extra ? 'area-boundary--extra-found' : '',
-          hoveredAreaCode === code ? 'area-boundary--hovered' : '',
-        ].filter(Boolean).join(' ')
-      })
+      .attr('class', areaBoundaryClass)
       .attr('data-area-code', (area) => area.properties.code)
       .attr('data-area-name', (area) => area.properties.name)
       .attr('d', (area) => mapPath(area as unknown as GeoPermissibleObjects) ?? '')
+      .on('pointerdown', (event) => {
+        event.stopPropagation()
+      })
+      .on('click', (event, area) => {
+        if (!event.shiftKey || !area.properties.isTop100 || solvedAreaCodes.has(area.properties.code) || quizFinished) {
+          return
+        }
+
+        event.preventDefault()
+        event.stopPropagation()
+        solveArea(area.properties.code, 'reveal')
+      })
       .on('pointerenter', (event, area) => {
         hoveredAreaCode = area.properties.code
         tooltipPoint = pointer(event, mapFrame) as [number, number]
-        scheduleMapRender()
+        renderHoverState()
       })
       .on('pointermove', (event) => {
         tooltipPoint = pointer(event, mapFrame) as [number, number]
-        scheduleMapRender()
+        renderHoverState()
       })
       .on('pointerleave', () => {
         hoveredAreaCode = null
         tooltipPoint = null
-        scheduleMapRender()
+        renderHoverState()
       })
 
-    const hoveredArea = hoveredAreaCode ? areaByCode.get(hoveredAreaCode) : null
-
-    svg
-      .selectAll<SVGGElement, BuiltUpAreaFeature>('g.map-tooltip')
-      .data(hoveredArea && tooltipPoint ? [hoveredArea] : [], (area) => area.properties.code)
-      .join(
-        (enter) => {
-          const group = enter.append('g').attr('class', 'map-tooltip')
-          group.append('rect').attr('rx', 8)
-          group.append('text')
-          return group
-        },
-        (update) => update,
-        (exit) => exit.remove(),
-      )
-      .attr('transform', () => {
-        const [x, y] = tooltipPoint ?? [0, 0]
-        return `translate(${Math.min(width - 220, Math.max(18, x + 14))} ${Math.max(18, y - 40)})`
-      })
-      .each(function (area) {
-        const group = select(this)
-        const code = area.properties.code
-        const canShowName = solvedAreaCodes.has(code) || revealedAreaCodes.has(code) || extraFoundAreaCodes.has(code)
-        const label = canShowName
-          ? `${area.properties.name} · ${formatNumber(area.properties.population)}`
-          : `Population ${formatNumber(area.properties.population)}`
-        const text = group.select<SVGTextElement>('text')
-          .attr('x', 10)
-          .attr('y', 18)
-          .text(label)
-
-        const textLength = text.node()?.getComputedTextLength() ?? 100
-        group.select<SVGRectElement>('rect')
-          .attr('width', textLength + 20)
-          .attr('height', 28)
-      })
+    renderMapTooltip(width, height)
   }
 
   function scheduleMapRender(): void {
@@ -925,8 +963,13 @@ async function bootstrap(): Promise<void> {
   }, { passive: false })
 
   mapFrame.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || event.target instanceof Element && event.target.closest('.area-boundary')) {
+      return
+    }
+
     mapFrame.setPointerCapture(event.pointerId)
     dragStart = {
+      pointerId: event.pointerId,
       pointer: [event.clientX, event.clientY],
       pan: [...mapPan],
     }
@@ -944,11 +987,19 @@ async function bootstrap(): Promise<void> {
     scheduleMapRender()
   })
 
-  mapFrame.addEventListener('pointerup', () => {
+  mapFrame.addEventListener('pointerup', (event) => {
+    if (dragStart?.pointerId === event.pointerId && mapFrame.hasPointerCapture(event.pointerId)) {
+      mapFrame.releasePointerCapture(event.pointerId)
+    }
+
     dragStart = null
   })
 
-  mapFrame.addEventListener('pointercancel', () => {
+  mapFrame.addEventListener('pointercancel', (event) => {
+    if (dragStart?.pointerId === event.pointerId && mapFrame.hasPointerCapture(event.pointerId)) {
+      mapFrame.releasePointerCapture(event.pointerId)
+    }
+
     dragStart = null
   })
 
