@@ -317,6 +317,7 @@ async function bootstrap(): Promise<void> {
   const solvedAreaCodes = new Set<string>()
   const revealedAreaCodes = new Set<string>()
   const extraFoundAreaCodes = new Set<string>()
+  const cluedAreaCodes = new Set<string>()
   const slotByAreaCode = new Map<string, HTMLLIElement>()
   let quizStartedAt: number | null = null
   let quizFinished = false
@@ -614,8 +615,11 @@ async function bootstrap(): Promise<void> {
         const group = select(this)
         const code = area.properties.code
         const canShowName = solvedAreaCodes.has(code) || revealedAreaCodes.has(code) || extraFoundAreaCodes.has(code)
+        const hasClue = cluedAreaCodes.has(code)
         const label = canShowName
           ? `${area.properties.name} · ${formatNumber(area.properties.population)}`
+          : hasClue
+            ? `Starts with ${area.properties.name[0]?.toUpperCase() ?? '?'} · Population ${formatNumber(area.properties.population)}`
           : `Population ${formatNumber(area.properties.population)}`
         const text = group.select<SVGTextElement>('text')
           .attr('x', 10)
@@ -702,13 +706,22 @@ async function bootstrap(): Promise<void> {
         event.stopPropagation()
       })
       .on('click', (event, area) => {
-        if (!event.shiftKey || !area.properties.isTop100 || solvedAreaCodes.has(area.properties.code) || quizFinished) {
+        if (!area.properties.isTop100 || solvedAreaCodes.has(area.properties.code) || quizFinished) {
           return
         }
 
         event.preventDefault()
         event.stopPropagation()
-        solveArea(area.properties.code, 'reveal')
+
+        if (event.shiftKey) {
+          solveArea(area.properties.code, 'reveal')
+          return
+        }
+
+        cluedAreaCodes.add(area.properties.code)
+        hoveredAreaCode = area.properties.code
+        tooltipPoint = pointer(event, mapFrame) as [number, number]
+        renderHoverState()
       })
       .on('pointerenter', (event, area) => {
         hoveredAreaCode = area.properties.code
