@@ -303,6 +303,15 @@ h1 {
   fill: #4a453b;
 }
 
+.county-boundary {
+  fill: none;
+  pointer-events: none;
+  stroke: rgba(255, 248, 223, 0.34);
+  stroke-linejoin: round;
+  stroke-width: 0.62;
+  vector-effect: non-scaling-stroke;
+}
+
 .town-marker {
   stroke: rgba(3, 10, 14, 0.86);
   stroke-width: 1.4;

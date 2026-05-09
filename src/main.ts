@@ -8,6 +8,7 @@ import {
 } from 'd3'
 
 import ukBoundaries from './generated/uk-country-boundaries.json'
+import ukCountyBoundaries from './generated/uk-county-boundaries.json'
 import { normalizeAnswer } from './normalize'
 import { quizTowns, type QuizTown } from './town-data'
 
@@ -18,6 +19,8 @@ const LONDON_DETAIL_ZOOM = 1.85
 
 type BoundaryFeature = GeoPermissibleObjects & {
   properties?: {
+    CTYUA23CD?: string
+    CTYUA23NM?: string
     ctry18nm?: string
   }
 }
@@ -232,10 +235,10 @@ app.innerHTML = `
           <p id="status" class="status" aria-live="polite"></p>
         </section>
         <p class="source-note">
-          Population ranking: World Population Review 2026 table. Boundary map: ONS countries, Dec 2018, ultra-generalised clipped boundaries.
+          Population ranking: World Population Review 2026 table. Boundary map: ONS country boundaries Dec 2018 and county/unitary authority boundaries Dec 2023, ultra-generalised clipped boundaries.
         </p>
       </div>
-      <section class="map-card" aria-label="Map of the United Kingdom with unlabelled town and city dots">
+      <section class="map-card" aria-label="Map of the United Kingdom with county borders and unlabelled town and city dots">
         <div class="map-card__toolbar">
           <button id="reset-map-button" class="map-tool-button" type="button">Reset map</button>
           <button id="london-map-button" class="map-tool-button" type="button">London detail</button>
@@ -430,6 +433,7 @@ function renderMap(): void {
   const width = Math.max(1, bounds.width)
   const height = Math.max(1, bounds.height)
   const boundaryData = ukBoundaries as BoundaryFeatureCollection
+  const countyBoundaryData = ukCountyBoundaries as BoundaryFeatureCollection
 
   mapProjection = geoIdentity()
     .reflectY(true)
@@ -449,7 +453,7 @@ function renderMap(): void {
     .attr('class', 'uk-map')
     .attr('viewBox', `0 0 ${width} ${height}`)
     .attr('role', 'img')
-    .attr('aria-label', 'Unlabelled map of the United Kingdom with dots for the top 100 towns and cities')
+    .attr('aria-label', 'Unlabelled map of the United Kingdom with county borders and dots for the top 100 towns and cities')
 
   const viewport = svg
     .selectAll<SVGGElement, null>('g.map-viewport')
@@ -464,6 +468,14 @@ function renderMap(): void {
     .join('path')
     .attr('class', 'country-boundary')
     .attr('data-country', (feature) => feature.properties?.ctry18nm ?? '')
+    .attr('d', (feature) => mapPath(feature) ?? '')
+
+  viewport
+    .selectAll<SVGPathElement, BoundaryFeature>('path.county-boundary')
+    .data(countyBoundaryData.features, (feature) => feature.properties?.CTYUA23CD ?? '')
+    .join('path')
+    .attr('class', 'county-boundary')
+    .attr('data-county', (feature) => feature.properties?.CTYUA23NM ?? '')
     .attr('d', (feature) => mapPath(feature) ?? '')
 
   const markerLayer = svg
