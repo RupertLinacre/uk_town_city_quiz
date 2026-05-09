@@ -52,6 +52,149 @@ const LONDON_CODES = new Map([
 ])
 
 const LONDON_POPULATION = [...LONDON_CODES.values()].reduce((sum, row) => sum + row.population, 0)
+const SCOTTISH_CONSOLIDATIONS = [
+  {
+    code: 'S450GREATERGLASGOW',
+    name: 'Glasgow',
+    alternateName: 'Greater Glasgow',
+    sourceCode: 'S53000230',
+    sourceName: 'Greater Glasgow',
+    population: 1023873,
+    aliases: ['Greater Glasgow'],
+    componentCodes: [
+      'S45001999',
+      'S45002269',
+      'S45001824',
+      'S45001715',
+      'S45002199',
+      'S45002312',
+      'S45002328',
+      'S45001784',
+      'S45001727',
+      'S45002247',
+      'S45001710',
+      'S45002071',
+      'S45001954',
+      'S45002435',
+    ],
+  },
+  {
+    code: 'S450AIRDRIEHAMILTONMOTHERWELL',
+    name: 'Airdrie, Hamilton and Motherwell',
+    alternateName: null,
+    sourceCode: 'S53000011',
+    sourceName: 'Aidrie, Hamilton and Motherwell',
+    population: 300371,
+    aliases: ['Airdrie', 'Hamilton', 'Motherwell'],
+    componentCodes: [
+      'S45001646',
+      'S45001828',
+      'S45002030',
+      'S45002216',
+      'S45001720',
+      'S45002466',
+      'S45002042',
+      'S45001737',
+      'S45001747',
+    ],
+  },
+  {
+    code: 'S450BONNYBRIDGECROYCUMBERNAULD',
+    name: 'Bonnybridge, Croy and Cumbernauld',
+    alternateName: null,
+    sourceCode: 'S53000064',
+    sourceName: 'Bonnybridge, Croy and Cumbernauld',
+    population: 78550,
+    aliases: ['Bonnybridge', 'Croy', 'Cumbernauld'],
+    componentCodes: [
+      'S45001744',
+      'S45001864',
+      'S45001870',
+    ],
+  },
+  {
+    code: 'S450BONNYRIGGDALKEITHMAYFIELDGOREBRIDGE',
+    name: 'Bonnyrigg, Dalkeith, Mayfield and Gorebridge',
+    alternateName: null,
+    sourceCode: 'S53000065',
+    sourceName: 'Bonnyrigg, Dalkeith, Mayfield and Gorebridge',
+    population: 56940,
+    aliases: ['Bonnyrigg', 'Dalkeith', 'Gorebridge', 'Mayfield'],
+    componentCodes: [
+      'S45001745',
+      'S45001879',
+      'S45002012',
+    ],
+  },
+  {
+    code: 'S450GLENROTHESTHORNTON',
+    name: 'Glenrothes and Thornton',
+    alternateName: null,
+    sourceCode: 'S53000226',
+    sourceName: 'Glenrothes and Thornton',
+    population: 45731,
+    aliases: ['Glenrothes', 'Thornton'],
+    componentCodes: [
+      'S45002010',
+      'S45002413',
+    ],
+  },
+  {
+    code: 'S450INVERNESSCULLODEN',
+    name: 'Inverness',
+    alternateName: 'Inverness and Culloden',
+    sourceCode: 'S53000256',
+    sourceName: 'Inverness and Culloden',
+    population: 65053,
+    aliases: ['Inbhir Nis', 'Inverness and Culloden', 'Culloden'],
+    componentCodes: [
+      'S45002049',
+      'S45002241',
+    ],
+  },
+  {
+    code: 'S450KILWINNINGSALTCOATS',
+    name: 'Kilwinning and Saltcoats',
+    alternateName: null,
+    sourceCode: 'S53000273',
+    sourceName: 'Kilwinning and Saltcoats',
+    population: 47354,
+    aliases: ['Kilwinning', 'Saltcoats'],
+    componentCodes: [
+      'S45002090',
+      'S45002332',
+    ],
+  },
+  {
+    code: 'S450KIRKCALDYDYSART',
+    name: 'Kirkcaldy',
+    alternateName: 'Kirkcaldy and Dysart',
+    sourceCode: 'S53000287',
+    sourceName: 'Kirkcaldy and Dysart',
+    population: 51117,
+    aliases: ['Kirkcaldy and Dysart', 'Dysart'],
+    componentCodes: [
+      'S45002106',
+    ],
+  },
+  {
+    code: 'S450METHILLEVENBUCKHAVEN',
+    name: 'Methil, Leven and Buckhaven',
+    alternateName: null,
+    sourceCode: 'S53000344',
+    sourceName: 'Methil, Leven and Buckhaven',
+    population: 31582,
+    aliases: ['Methil', 'Leven', 'Buckhaven'],
+    componentCodes: [
+      'S45002192',
+      'S45002144',
+      'S45001769',
+    ],
+  },
+]
+const SCOTTISH_CONSOLIDATION_BY_CODE = new Map(
+  SCOTTISH_CONSOLIDATIONS.flatMap((group) => group.componentCodes.map((code) => [code, group])),
+)
 const SIMPLIFY_TOLERANCE_METRES = 85
 
 function normalizeName(value) {
@@ -706,7 +849,11 @@ function countyForFeature(feature, counties) {
 }
 
 function featureAliases(feature) {
-  const aliases = new Set([feature.properties.name, feature.properties.alternateName])
+  const aliases = new Set([
+    feature.properties.name,
+    feature.properties.alternateName,
+    ...(feature.properties.manualAliases ?? []),
+  ])
 
   if (feature.properties.name.endsWith(' upon Tyne')) {
     aliases.add(feature.properties.name.replace(' upon Tyne', ''))
@@ -729,7 +876,7 @@ function main() {
   const counties = createCountyLookup()
   const rawFeatures = []
   const londonGeometries = []
-  let matchedPopulationCount = 0
+  const scottishConsolidationGeometries = new Map(SCOTTISH_CONSOLIDATIONS.map((group) => [group.code, []]))
 
   for (const row of readCsv(paths.osBuiltUpAreas)) {
     const code = rowValue(row, 'gsscode')
@@ -742,11 +889,14 @@ function main() {
       continue
     }
 
-    const population = findPopulation(row, lookups)
+    const scottishConsolidation = SCOTTISH_CONSOLIDATION_BY_CODE.get(code)
 
-    if (population) {
-      matchedPopulationCount += 1
+    if (scottishConsolidation) {
+      scottishConsolidationGeometries.get(scottishConsolidation.code)?.push(geometryBritishGrid)
+      continue
     }
+
+    const population = findPopulation(row, lookups)
 
     rawFeatures.push({
       type: 'Feature',
@@ -793,6 +943,39 @@ function main() {
     },
     geometryBritishGrid: londonGeometry,
   })
+
+  for (const group of SCOTTISH_CONSOLIDATIONS) {
+    const geometries = scottishConsolidationGeometries.get(group.code) ?? []
+
+    if (geometries.length !== group.componentCodes.length) {
+      console.warn(`Expected ${group.componentCodes.length} ${group.name} components, found ${geometries.length}`)
+    }
+
+    const geometry = {
+      type: 'MultiPolygon',
+      coordinates: geometries.flatMap((componentGeometry) =>
+        componentGeometry.type === 'Polygon' ? [componentGeometry.coordinates] : componentGeometry.coordinates,
+      ),
+    }
+
+    rawFeatures.push({
+      type: 'Feature',
+      properties: {
+        code: group.code,
+        name: group.name,
+        alternateName: group.alternateName,
+        areaHectares: geometries.reduce((total, componentGeometry) => total + Math.abs(totalGeometryArea(componentGeometry)) / 10000, 0),
+        population: group.population,
+        populationYear: 2022,
+        populationSource: `Scottish Government Urban Rural Classification 2022 Census 2022 settlements lookup (${group.sourceName})`,
+        populationSourceCode: group.sourceCode,
+        country: 'Scotland',
+        centroidBritishGrid: largestRingCentroid(geometry),
+        manualAliases: group.aliases,
+      },
+      geometryBritishGrid: geometry,
+    })
+  }
 
   const populatedFeatures = rawFeatures
     .filter((feature) => feature.properties.population !== null)
@@ -864,12 +1047,13 @@ function main() {
   writeBoundaryData()
 
   const unmatchedCount = features.filter((feature) => feature.properties.population === null).length
+  const matchedCount = features.length - unmatchedCount
   console.log(`Prepared ${features.length} built-up areas in public/data`)
   console.log(
     `Population lookups loaded: ${JSON.stringify({
       bua24: lookups.byBuaCode.size,
       scotlandSettlements: lookups.byScottishName.size,
-    })}; matched ${matchedPopulationCount + 1}, unmatched ${unmatchedCount}`,
+    })}; matched ${matchedCount}, unmatched ${unmatchedCount}`,
   )
   console.log(`Top 100 starts: ${populatedFeatures.slice(0, 10).map((feature) => feature.properties.name).join(', ')}`)
 }
