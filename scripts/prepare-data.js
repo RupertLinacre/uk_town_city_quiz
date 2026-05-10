@@ -109,6 +109,15 @@ const ENGLISH_CEREMONIAL_COUNTY_BY_ADMIN_AREA = new Map(Object.entries({
   York: 'North Yorkshire',
 }))
 
+const BUILT_UP_AREA_COUNTY_OVERRIDES = new Map(Object.entries({
+  E63014545: 'North Yorkshire', // Grangetown
+  E63015158: 'East Riding of Yorkshire', // Paull
+  E63017128: 'Suffolk', // Lowestoft
+  E63020685: 'Kent', // Dungeness
+  E63021332: 'Cornwall', // Downderry
+  E63021432: 'Cornwall', // Mylor Bridge
+}))
+
 const LONDON_CODES = new Map([
   ['E63019198', { name: 'Barking and Dagenham', population: 218236 }],
   ['E63019085', { name: 'Barnet', population: 388143 }],
@@ -985,6 +994,11 @@ function createCountyLookup() {
 }
 
 function countyForFeature(feature, counties) {
+  const overrideCounty = BUILT_UP_AREA_COUNTY_OVERRIDES.get(feature.properties.code)
+  if (overrideCounty) {
+    return overrideCounty
+  }
+
   if (feature.properties.code === 'E630LONDON') {
     return 'London'
   }

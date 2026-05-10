@@ -2,6 +2,7 @@ import './style.css'
 import {
   geoMercator,
   geoPath,
+  interpolatePlasma,
   pointer,
   select,
   type GeoPath,
@@ -31,6 +32,13 @@ const MAP_MIN_ZOOM = 0.8
 const MAP_MAX_ZOOM = 6
 const DESKTOP_WHEEL_ZOOM_SPEED = 0.0056
 const APP_BASE_URL = new URL(import.meta.env.BASE_URL, window.location.href)
+const UNKNOWN_POPULATION_COLOR = '#8c969c'
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register(new URL('service-worker.js', APP_BASE_URL))
+  })
+}
 
 type TrackerMode = 'alphabetical' | 'county' | 'population'
 
@@ -119,6 +127,10 @@ function formatNumber(value: number | null): string {
 
 function formatAreaDetails(area: BuiltUpAreaFeature): string {
   return `County: ${area.properties.county}. Population: ${formatNumber(area.properties.population)}.`
+}
+
+function formatSlotDetails(area: BuiltUpAreaFeature): string {
+  return `Population: ${formatNumber(area.properties.population)}. County: ${area.properties.county}.`
 }
 
 function isNorthernIrelandCounty(feature: BoundaryFeature): boolean {
@@ -392,6 +404,11 @@ async function bootstrap(): Promise<void> {
     type: 'FeatureCollection',
     features: topAreas,
   }
+  const topAreaPopulations = topAreas
+    .map((area) => area.properties.population)
+    .filter((population): population is number => population !== null && population > 0)
+  const minTopAreaPopulation = Math.min(...topAreaPopulations)
+  const maxTopAreaPopulation = Math.max(...topAreaPopulations)
   const areaByCode = new Map(areas.map((area) => [area.properties.code, area]))
   const aliasToAreaCode = new Map<string, string>()
   const aliasCandidates = [...areas].sort((left, right) => {
@@ -468,6 +485,7 @@ async function bootstrap(): Promise<void> {
                   <input id="city-label-size-input" type="range" min="${CITY_LABEL_MIN_FONT_SIZE}" max="${CITY_LABEL_MAX_FONT_SIZE}" step="0.5" value="${DEFAULT_CITY_LABEL_FONT_SIZE}" />
                   <output id="city-label-size-output" for="city-label-size-input">${DEFAULT_CITY_LABEL_FONT_SIZE}</output>
                 </label>
+                <p class="settings-menu__hint">Single click an unanswered place for a first-letter clue. Shift-click one to reveal it.</p>
               </div>
             </details>
             <button id="reset-map-button" class="map-tool-button" type="button">Reset map</button>
@@ -641,13 +659,30 @@ async function bootstrap(): Promise<void> {
 
     const solved = solvedAreaCodes.has(areaCode)
     const revealed = revealedAreaCodes.has(areaCode)
+    const clued = cluedAreaCodes.has(areaCode)
     slot.className = [
       'town-slot',
       solved ? 'town-slot--solved' : 'town-slot--empty',
       revealed ? 'town-slot--revealed' : '',
+      clued && !solved ? 'town-slot--clued' : '',
     ].filter(Boolean).join(' ')
-    slot.textContent = solved ? area.properties.name : ''
-    slot.title = solved ? `${area.properties.name}, population ${formatNumber(area.properties.population)}` : ''
+    slot.setAttribute('aria-label', solved
+      ? `${area.properties.name}. ${formatSlotDetails(area)}`
+      : clued
+        ? `Starts with ${area.properties.name[0]?.toUpperCase() ?? '?'}. ${formatSlotDetails(area)}`
+        : formatSlotDetails(area))
+    slot.title = ''
+
+    const label = document.createElement('span')
+    label.className = 'town-slot__label'
+    label.textContent = solved ? area.properties.name : clued ? area.properties.name[0]?.toUpperCase() ?? '?' : ''
+
+    const tooltip = document.createElement('span')
+    tooltip.className = 'town-slot__tooltip'
+    tooltip.setAttribute('role', 'tooltip')
+    tooltip.textContent = formatSlotDetails(area)
+
+    slot.replaceChildren(label, tooltip)
   }
 
   function renderTracker(): void {
@@ -679,6 +714,7 @@ async function bootstrap(): Promise<void> {
       for (const area of group.areas) {
         const slot = document.createElement('li')
         slot.dataset.areaCode = area.properties.code
+        slot.tabIndex = 0
         slot.style.setProperty('--slot-width', `${slotWidthForArea(area)}rem`)
         attachSlotCheatInteractions(slot, area.properties.code)
         slotByAreaCode.set(area.properties.code, slot)
@@ -736,12 +772,20 @@ async function bootstrap(): Promise<void> {
     }
 
     slot.addEventListener('click', (event) => {
-      if (!event.shiftKey || solvedAreaCodes.has(areaCode) || quizFinished) {
+      if (solvedAreaCodes.has(areaCode) || quizFinished) {
         return
       }
 
       event.preventDefault()
-      solveArea(areaCode, 'reveal')
+
+      if (event.shiftKey) {
+        solveArea(areaCode, 'reveal')
+        return
+      }
+
+      cluedAreaCodes.add(areaCode)
+      applySlotState(areaCode)
+      renderMap()
     })
 
     slot.addEventListener('touchstart', (event) => {
@@ -841,6 +885,32 @@ async function bootstrap(): Promise<void> {
     ].filter(Boolean).join(' ')
   }
 
+  function populationColor(area: BuiltUpAreaFeature): string {
+    const population = area.properties.population
+
+    if (population === null || population <= 0 || topAreaPopulations.length === 0) {
+      return UNKNOWN_POPULATION_COLOR
+    }
+
+    const minLog = Math.log(minTopAreaPopulation)
+    const maxLog = Math.log(maxTopAreaPopulation)
+    const normalized = maxLog === minLog
+      ? 0.5
+      : (Math.log(population) - minLog) / (maxLog - minLog)
+
+    return interpolatePlasma(Math.max(0, Math.min(1, normalized)) * 0.86 + 0.08)
+  }
+
+  function areaBoundaryFill(area: BuiltUpAreaFeature): string | null {
+    const code = area.properties.code
+
+    if (solvedAreaCodes.has(code) || revealedAreaCodes.has(code) || extraFoundAreaCodes.has(code)) {
+      return null
+    }
+
+    return area.properties.isTop100 ? populationColor(area) : null
+  }
+
   function renderHoverState(): void {
     const bounds = mapFrame.getBoundingClientRect()
     const width = Math.max(1, bounds.width)
@@ -854,6 +924,7 @@ async function bootstrap(): Promise<void> {
     svg
       .selectAll<SVGPathElement, BuiltUpAreaFeature>('path.area-boundary')
       .attr('class', areaBoundaryClass)
+      .style('fill', areaBoundaryFill)
 
     renderMapTooltip(width, height)
   }
@@ -981,6 +1052,7 @@ async function bootstrap(): Promise<void> {
       .attr('data-area-code', (area) => area.properties.code)
       .attr('data-area-name', (area) => area.properties.name)
       .attr('d', (area) => mapPath(area as unknown as GeoPermissibleObjects) ?? '')
+      .style('fill', areaBoundaryFill)
       .on('pointerdown', (event) => {
         event.stopPropagation()
       })
@@ -998,6 +1070,7 @@ async function bootstrap(): Promise<void> {
         }
 
         cluedAreaCodes.add(area.properties.code)
+        applySlotState(area.properties.code)
         hoveredAreaCode = area.properties.code
         tooltipPoint = pointer(event, mapFrame) as [number, number]
         renderHoverState()

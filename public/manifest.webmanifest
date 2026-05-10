@@ -1,0 +1,25 @@
+{
+  "name": "GB Towns and Cities Quiz",
+  "short_name": "GB Cities Quiz",
+  "description": "Quiz the top 100 GB towns and cities by population on an unlabelled map.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#eef7fa",
+  "theme_color": "#b87913",
+  "icons": [
+    {
+      "src": "pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
