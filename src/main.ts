@@ -4,6 +4,7 @@ import {
   geoPath,
   pointer,
   select,
+  type GeoPath,
   type GeoPermissibleObjects,
   type GeoProjection,
 } from 'd3'
@@ -13,11 +14,28 @@ import { normalizeAnswer } from './normalize'
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
 const MOBILE_CHEAT_HOLD_MS = 1600
 const MAP_PADDING = 18
-const LONDON_DETAIL_ZOOM = 2.45
 const OSM_TILE_SIZE = 256
 const DEFAULT_EXTRA_ANSWER_RANK_LIMIT = 300
+const SETTINGS_QUERY_PARAM = 'settings'
+const COUNTY_LABEL_MAX_FONT_SIZE = 13
+const COUNTY_LABEL_MIN_FONT_SIZE = 2.6
+const COUNTY_LABEL_WIDTH_RATIO = 0.72
+const COUNTY_LABEL_HEIGHT_RATIO = 0.68
+const COUNTY_LABEL_LINE_HEIGHT = 1.05
+const COUNTY_LABEL_CHARACTER_WIDTH = 0.58
+const DEFAULT_CITY_LABEL_FONT_SIZE = 12.5
+const CITY_LABEL_MIN_FONT_SIZE = 8
+const CITY_LABEL_MAX_FONT_SIZE = 18
+const CITY_LABEL_STROKE_WIDTH = 2.4
 
 type TrackerMode = 'alphabetical' | 'county' | 'population'
+
+type AppSettings = {
+  extraAnswerRankLimit: number
+  showCountyNames: boolean
+  showCityLabels: boolean
+  cityLabelSize: number
+}
 
 type Geometry = {
   type: 'Polygon' | 'MultiPolygon'
@@ -130,6 +148,98 @@ function slotWidthForArea(area: BuiltUpAreaFeature): number {
   return Math.max(5.2, Math.min(16, area.properties.name.length * 0.54 + 1.5))
 }
 
+function splitCountyLabel(name: string): string[] {
+  const words = name.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean)
+
+  if (words.length <= 1) {
+    return words
+  }
+
+  const connectorWords = new Set(['and', 'of', 'upon', 'with'])
+  let bestBreakIndex = 1
+  let bestScore = Number.POSITIVE_INFINITY
+
+  for (let index = 1; index < words.length; index += 1) {
+    const left = words.slice(0, index).join(' ')
+    const right = words.slice(index).join(' ')
+    const leftEnd = words[index - 1].replace(/[^\w]+$/g, '').toLowerCase()
+    const rightStart = words[index].replace(/^[^\w]+/g, '').toLowerCase()
+    let score = Math.max(left.length, right.length) * 2 + Math.abs(left.length - right.length)
+
+    if (connectorWords.has(leftEnd)) {
+      score += 20
+    }
+
+    if (rightStart === 'of' || rightStart === 'upon') {
+      score += 10
+    }
+
+    if (rightStart === 'and' || rightStart === 'with') {
+      score += 4
+    }
+
+    if (score <= bestScore) {
+      bestScore = score
+      bestBreakIndex = index
+    }
+  }
+
+  return [
+    words.slice(0, bestBreakIndex).join(' '),
+    words.slice(bestBreakIndex).join(' '),
+  ]
+}
+
+function countyLabelFontSize(feature: BoundaryFeature, lines: string[], mapPath: GeoPath): number {
+  const [[x0, y0], [x1, y1]] = mapPath.bounds(feature)
+  const width = Math.max(1, x1 - x0)
+  const height = Math.max(1, y1 - y0)
+  const longestLineLength = Math.max(...lines.map((line) => line.length), 1)
+  const widthLimitedSize = (width * COUNTY_LABEL_WIDTH_RATIO) / (longestLineLength * COUNTY_LABEL_CHARACTER_WIDTH)
+  const heightLimitedSize = (height * COUNTY_LABEL_HEIGHT_RATIO) / (lines.length * COUNTY_LABEL_LINE_HEIGHT)
+
+  return Math.max(
+    COUNTY_LABEL_MIN_FONT_SIZE,
+    Math.min(COUNTY_LABEL_MAX_FONT_SIZE, widthLimitedSize, heightLimitedSize),
+  )
+}
+
+function renderCountyLabel(
+  labelNode: SVGTextElement,
+  feature: BoundaryFeature,
+  mapPath: GeoPath,
+): void {
+  const label = select(labelNode)
+  const name = feature.properties?.CTYUA23NM ?? ''
+  const lines = splitCountyLabel(name)
+
+  if (lines.length === 0) {
+    label.text('')
+    return
+  }
+
+  const [x, y] = mapPath.centroid(feature)
+  const fontSize = countyLabelFontSize(feature, lines, mapPath)
+
+  label
+    .attr('x', x)
+    .attr('y', y)
+    .attr('aria-label', name)
+    .attr('data-font-size', fontSize.toFixed(2))
+    .style('font-size', `${fontSize}px`)
+    .style('stroke-width', `${Math.max(0.65, Math.min(2.2, fontSize * 0.18))}px`)
+
+  label
+    .selectAll<SVGTSpanElement, string>('tspan')
+    .data(lines)
+    .join('tspan')
+    .attr('x', x)
+    .attr('dy', (_line, index) =>
+      index === 0 ? `${-(lines.length - 1) * COUNTY_LABEL_LINE_HEIGHT / 2}em` : `${COUNTY_LABEL_LINE_HEIGHT}em`,
+    )
+    .text((line) => line)
+}
+
 function aliasesForArea(area: BuiltUpAreaFeature): string[] {
   const names = new Set([
     area.properties.name,
@@ -169,6 +279,78 @@ function lonForTileX(x: number, z: number): number {
 function latForTileY(y: number, z: number): number {
   const n = Math.PI - (2 * Math.PI * y) / 2 ** z
   return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)))
+}
+
+function clampExtraAnswerRankLimit(value: number): number {
+  return Math.max(100, Math.min(1000, Math.round(value)))
+}
+
+function clampCityLabelSize(value: number): number {
+  return Math.max(CITY_LABEL_MIN_FONT_SIZE, Math.min(CITY_LABEL_MAX_FONT_SIZE, value))
+}
+
+function defaultSettings(): AppSettings {
+  return {
+    extraAnswerRankLimit: DEFAULT_EXTRA_ANSWER_RANK_LIMIT,
+    showCountyNames: false,
+    showCityLabels: true,
+    cityLabelSize: DEFAULT_CITY_LABEL_FONT_SIZE,
+  }
+}
+
+function applyParsedSettings(settings: AppSettings, parsed: Partial<AppSettings>): AppSettings {
+  if (typeof parsed.extraAnswerRankLimit === 'number' && Number.isFinite(parsed.extraAnswerRankLimit)) {
+    settings.extraAnswerRankLimit = clampExtraAnswerRankLimit(parsed.extraAnswerRankLimit)
+  }
+
+  if (typeof parsed.showCountyNames === 'boolean') {
+    settings.showCountyNames = parsed.showCountyNames
+  }
+
+  if (typeof parsed.showCityLabels === 'boolean') {
+    settings.showCityLabels = parsed.showCityLabels
+  }
+
+  if (typeof parsed.cityLabelSize === 'number' && Number.isFinite(parsed.cityLabelSize)) {
+    settings.cityLabelSize = clampCityLabelSize(parsed.cityLabelSize)
+  }
+
+  return settings
+}
+
+function parseSettings(): AppSettings {
+  const settings = defaultSettings()
+  const params = new URLSearchParams(window.location.search)
+  const settingsPayload = params.get(SETTINGS_QUERY_PARAM)
+
+  if (!settingsPayload) {
+    return settings
+  }
+
+  const candidates = [settingsPayload]
+
+  try {
+    candidates.push(decodeURIComponent(settingsPayload))
+  } catch {
+    // URLSearchParams already decodes ordinary query strings.
+  }
+
+  for (const candidate of candidates) {
+    try {
+      return applyParsedSettings(settings, JSON.parse(candidate) as Partial<AppSettings>)
+    } catch {
+      continue
+    }
+  }
+
+  return settings
+}
+
+function updateUrlSettings(settings: AppSettings): void {
+  const url = new URL(window.location.href)
+
+  url.searchParams.set(SETTINGS_QUERY_PARAM, JSON.stringify(settings))
+  window.history.replaceState(null, '', url)
 }
 
 const app = requireElement<HTMLDivElement>('#app')
@@ -259,13 +441,27 @@ async function bootstrap(): Promise<void> {
           <div class="map-card__toolbar">
             <details class="settings-menu">
               <summary>Settings</summary>
-              <label class="settings-menu__field" for="extra-answer-limit-input">
-                Extra answers
-                <input id="extra-answer-limit-input" type="text" inputmode="numeric" pattern="[0-9]*" value="${DEFAULT_EXTRA_ANSWER_RANK_LIMIT}" />
-              </label>
+              <div class="settings-menu__panel">
+                <label class="settings-menu__field" for="extra-answer-limit-input">
+                  Extra answers
+                  <input id="extra-answer-limit-input" type="text" inputmode="numeric" pattern="[0-9]*" value="${DEFAULT_EXTRA_ANSWER_RANK_LIMIT}" />
+                </label>
+                <label class="settings-menu__check" for="show-county-names-input">
+                  <input id="show-county-names-input" type="checkbox" />
+                  County names
+                </label>
+                <label class="settings-menu__check" for="show-city-labels-input">
+                  <input id="show-city-labels-input" type="checkbox" />
+                  Answer labels
+                </label>
+                <label class="settings-menu__field settings-menu__field--range" for="city-label-size-input">
+                  <span>Label size</span>
+                  <input id="city-label-size-input" type="range" min="${CITY_LABEL_MIN_FONT_SIZE}" max="${CITY_LABEL_MAX_FONT_SIZE}" step="0.5" value="${DEFAULT_CITY_LABEL_FONT_SIZE}" />
+                  <output id="city-label-size-output" for="city-label-size-input">${DEFAULT_CITY_LABEL_FONT_SIZE}</output>
+                </label>
+              </div>
             </details>
             <button id="reset-map-button" class="map-tool-button" type="button">Reset map</button>
-            <button id="london-map-button" class="map-tool-button" type="button">London detail</button>
           </div>
           <div id="map-frame" class="map-frame">
             <a class="osm-attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">&copy; OpenStreetMap contributors</a>
@@ -304,8 +500,11 @@ async function bootstrap(): Promise<void> {
   const answerInput = requireElement<HTMLInputElement>('#guess-input')
   const giveUpButton = requireElement<HTMLButtonElement>('#give-up-button')
   const resetMapButton = requireElement<HTMLButtonElement>('#reset-map-button')
-  const londonMapButton = requireElement<HTMLButtonElement>('#london-map-button')
   const extraAnswerLimitInput = requireElement<HTMLInputElement>('#extra-answer-limit-input')
+  const showCountyNamesInput = requireElement<HTMLInputElement>('#show-county-names-input')
+  const showCityLabelsInput = requireElement<HTMLInputElement>('#show-city-labels-input')
+  const cityLabelSizeInput = requireElement<HTMLInputElement>('#city-label-size-input')
+  const cityLabelSizeOutput = requireElement<HTMLOutputElement>('#city-label-size-output')
   const mapFrame = requireElement<HTMLElement>('#map-frame')
   const letterBoard = requireElement<HTMLElement>('#letter-board')
   const trackerTitle = requireElement<HTMLElement>('#tracker-title')
@@ -321,7 +520,11 @@ async function bootstrap(): Promise<void> {
   const slotByAreaCode = new Map<string, HTMLLIElement>()
   let quizStartedAt: number | null = null
   let quizFinished = false
-  let extraAnswerRankLimit = DEFAULT_EXTRA_ANSWER_RANK_LIMIT
+  const initialSettings = parseSettings()
+  let extraAnswerRankLimit = initialSettings.extraAnswerRankLimit
+  let showCountyNames = initialSettings.showCountyNames
+  let showCityLabels = initialSettings.showCityLabels
+  let cityLabelSize = initialSettings.cityLabelSize
   let trackerMode: TrackerMode = 'alphabetical'
   let intervalHandle = window.setInterval(tick, 250)
   let hoveredAreaCode: string | null = null
@@ -351,6 +554,19 @@ async function bootstrap(): Promise<void> {
     return rank !== null && rank <= extraAnswerRankLimit
   }
 
+  function currentSettings(): AppSettings {
+    return {
+      extraAnswerRankLimit,
+      showCountyNames,
+      showCityLabels,
+      cityLabelSize,
+    }
+  }
+
+  function syncSettingsUrl(): void {
+    updateUrlSettings(currentSettings())
+  }
+
   function updateExtraAnswerRankLimit(): void {
     const parsedLimit = Number(extraAnswerLimitInput.value)
 
@@ -359,9 +575,44 @@ async function bootstrap(): Promise<void> {
       return
     }
 
-    extraAnswerRankLimit = Math.max(100, Math.min(1000, Math.round(parsedLimit)))
+    extraAnswerRankLimit = clampExtraAnswerRankLimit(parsedLimit)
     extraAnswerLimitInput.value = String(extraAnswerRankLimit)
+    syncSettingsUrl()
     renderStatus(`Extra answers limited to the top ${formatNumber(extraAnswerRankLimit)}.`, 'neutral')
+  }
+
+  function updateCountyNameSetting(): void {
+    showCountyNames = showCountyNamesInput.checked
+    syncSettingsUrl()
+    renderMap()
+  }
+
+  function syncCityLabelSizeControl(): void {
+    cityLabelSizeInput.value = String(cityLabelSize)
+    cityLabelSizeOutput.textContent = cityLabelSize.toFixed(cityLabelSize % 1 === 0 ? 0 : 1)
+  }
+
+  function updateCityLabelSetting(): void {
+    showCityLabels = showCityLabelsInput.checked
+    syncSettingsUrl()
+    renderMap()
+  }
+
+  function updateCityLabelSize(): void {
+    cityLabelSize = clampCityLabelSize(Number(cityLabelSizeInput.value))
+    syncCityLabelSizeControl()
+    syncSettingsUrl()
+    renderMap()
+  }
+
+  function turnOffCityLabels(): void {
+    if (!showCityLabels) {
+      return
+    }
+
+    showCityLabels = false
+    showCityLabelsInput.checked = false
+    syncSettingsUrl()
   }
 
   function applySlotState(areaCode: string): void {
@@ -687,6 +938,17 @@ async function bootstrap(): Promise<void> {
       .attr('d', (feature) => mapPath(feature) ?? '')
 
     viewport
+      .selectAll<SVGTextElement, BoundaryFeature>('text.county-label')
+      .data(showCountyNames ? countyBoundaryData.features : [], (feature) => feature.properties?.CTYUA23CD ?? '')
+      .join('text')
+      .attr('class', 'county-label')
+      .attr('pointer-events', 'none')
+      .attr('aria-hidden', 'true')
+      .each(function renderLabel(feature) {
+        renderCountyLabel(this, feature, mapPath)
+      })
+
+    viewport
       .selectAll<SVGPathElement, BoundaryFeature>('path.county-boundary')
       .data(countyBoundaryData.features, (feature) => feature.properties?.CTYUA23CD ?? '')
       .join('path')
@@ -737,6 +999,22 @@ async function bootstrap(): Promise<void> {
         tooltipPoint = null
         renderHoverState()
       })
+
+    viewport
+      .selectAll<SVGTextElement, BuiltUpAreaFeature>('text.city-label')
+      .data(showCityLabels && !quizFinished ? visibleAreaFeatures().filter((area) => {
+        const code = area.properties.code
+        return solvedAreaCodes.has(code) || revealedAreaCodes.has(code) || extraFoundAreaCodes.has(code)
+      }) : [], (area) => area.properties.code)
+      .join('text')
+      .attr('class', 'city-label')
+      .attr('pointer-events', 'none')
+      .attr('aria-hidden', 'true')
+      .attr('x', (area) => mapProjection(area.properties.centroid)?.[0] ?? 0)
+      .attr('y', (area) => mapProjection(area.properties.centroid)?.[1] ?? 0)
+      .style('font-size', `${cityLabelSize / mapZoom}px`)
+      .style('stroke-width', `${CITY_LABEL_STROKE_WIDTH / mapZoom}px`)
+      .text((area) => area.properties.name)
 
     renderMapTooltip(width, height)
   }
@@ -868,6 +1146,7 @@ async function bootstrap(): Promise<void> {
 
   function finishQuiz(celebrate: boolean): void {
     quizFinished = true
+    turnOffCityLabels()
     window.clearInterval(intervalHandle)
     answerInput.disabled = true
     giveUpButton.disabled = true
@@ -906,23 +1185,6 @@ async function bootstrap(): Promise<void> {
     renderMap()
   }
 
-  function focusLondon(): void {
-    const london = areaByCode.get('E630LONDON')
-    const projected = london ? mapProjection(london.properties.centroid) : null
-
-    if (!london || !projected) {
-      return
-    }
-
-    const frameBounds = mapFrame.getBoundingClientRect()
-    mapZoom = LONDON_DETAIL_ZOOM
-    mapPan = [
-      frameBounds.width / 2 - projected[0] * LONDON_DETAIL_ZOOM,
-      frameBounds.height / 2 - projected[1] * LONDON_DETAIL_ZOOM,
-    ]
-    renderMap()
-  }
-
   answerInput.addEventListener('input', maybeAcceptGuess)
   answerInput.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter') {
@@ -934,8 +1196,10 @@ async function bootstrap(): Promise<void> {
   })
   giveUpButton.addEventListener('click', revealAll)
   resetMapButton.addEventListener('click', resetMapView)
-  londonMapButton.addEventListener('click', focusLondon)
   extraAnswerLimitInput.addEventListener('change', updateExtraAnswerRankLimit)
+  showCountyNamesInput.addEventListener('change', updateCountyNameSetting)
+  showCityLabelsInput.addEventListener('change', updateCityLabelSetting)
+  cityLabelSizeInput.addEventListener('input', updateCityLabelSize)
   extraAnswerLimitInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
       event.preventDefault()
@@ -1026,6 +1290,11 @@ async function bootstrap(): Promise<void> {
     }
   })
 
+  extraAnswerLimitInput.value = String(extraAnswerRankLimit)
+  showCountyNamesInput.checked = showCountyNames
+  showCityLabelsInput.checked = showCityLabels
+  syncCityLabelSizeControl()
+  syncSettingsUrl()
   renderScore()
   renderTracker()
   renderStatus('')

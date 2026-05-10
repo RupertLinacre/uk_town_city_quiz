@@ -301,14 +301,14 @@ h1 {
   background: rgba(242, 193, 78, 0.19);
 }
 
-.settings-menu__field {
+.settings-menu__panel {
   position: absolute;
   top: calc(100% + 0.45rem);
   right: 0;
   z-index: 4;
-  width: 13rem;
+  width: 15rem;
   display: grid;
-  gap: 0.45rem;
+  gap: 0.7rem;
   padding: 0.75rem;
   border: 1px solid rgba(242, 193, 78, 0.28);
   border-radius: 8px;
@@ -316,6 +316,11 @@ h1 {
   color: var(--ink-soft);
   font-size: 0.82rem;
   font-weight: 800;
+}
+
+.settings-menu__field {
+  display: grid;
+  gap: 0.45rem;
 }
 
 .settings-menu__field input {
@@ -327,6 +332,35 @@ h1 {
   background: rgba(2, 10, 15, 0.92);
   color: #fff8df;
   font-weight: 800;
+}
+
+.settings-menu__field--range {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+.settings-menu__field--range input {
+  grid-column: 1 / -1;
+  min-height: auto;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+.settings-menu__field--range output {
+  color: #fff8df;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-menu__check {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.settings-menu__check input {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: var(--accent);
 }
 
 .map-frame {
@@ -417,6 +451,32 @@ h1 {
   stroke: rgba(255, 248, 223, 0.34);
   stroke-linejoin: round;
   stroke-width: 0.62;
+  vector-effect: non-scaling-stroke;
+}
+
+.county-label {
+  pointer-events: none;
+  fill: #000;
+  stroke: rgba(255, 255, 255, 0.5);
+  stroke-width: 2.2px;
+  paint-order: stroke;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-anchor: middle;
+  dominant-baseline: central;
+  vector-effect: non-scaling-stroke;
+}
+
+.city-label {
+  pointer-events: none;
+  fill: #fffdf5;
+  stroke: rgba(2, 10, 14, 0.9);
+  stroke-width: 2.4px;
+  paint-order: stroke;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-anchor: middle;
+  dominant-baseline: central;
   vector-effect: non-scaling-stroke;
 }
 
@@ -684,7 +744,7 @@ h1 {
     font-size: 0.72rem;
   }
 
-  .settings-menu__field {
+  .settings-menu__panel {
     right: auto;
     left: 0;
     width: min(88vw, 13rem);
