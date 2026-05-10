@@ -49,8 +49,11 @@ button {
 
 .shell {
   width: min(1560px, calc(100vw - 2rem));
+  min-height: 100vh;
   margin: 0 auto;
   padding: 1.2rem 0 2.4rem;
+  display: flex;
+  flex-direction: column;
 }
 
 .shell--loading {
@@ -250,6 +253,7 @@ h1 {
 
 .source-note {
   margin: auto 0 0;
+  padding-top: 1rem;
   color: var(--ink-muted);
   font-size: 0.82rem;
   line-height: 1.45;
@@ -737,22 +741,99 @@ h1 {
 @media (max-width: 620px) {
   .shell {
     width: min(100% - 1rem, 1560px);
-    padding-top: 0.5rem;
+    padding: 0.5rem 0 1rem;
+  }
+
+  .quiz {
+    gap: 0.5rem;
   }
 
   .quiz__copy,
   .map-card,
   .tracker {
-    padding: 0.75rem;
+    padding: 0.5rem;
+  }
+
+  .quiz__copy {
+    display: contents;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  .hero {
+    order: 1;
+    gap: 0;
+    padding: 0 0.5rem;
+  }
+
+  h1 {
+    max-width: none;
+    font-size: 1.35rem;
+    line-height: 1.04;
   }
 
   .stats {
-    grid-template-columns: 1fr;
+    order: 5;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.4rem;
+  }
+
+  .stat-card {
+    min-height: 0;
+    gap: 0.18rem;
+    padding: 0.42rem;
+  }
+
+  .stat-card__label,
+  .stat-card__meta {
+    font-size: 0.66rem;
+    line-height: 1.1;
+  }
+
+  .stat-card__value {
+    font-size: 1rem;
+    line-height: 1.05;
+  }
+
+  .give-up-button {
+    min-height: 1.55rem;
+    padding: 0.18rem 0.38rem;
+    font-size: 0.58rem;
+    letter-spacing: 0.02em;
+  }
+
+  .answer-panel {
+    order: 3;
+    gap: 0.35rem;
+    padding: 0.45rem;
+  }
+
+  .answer-panel__input {
+    min-height: 2.75rem;
+    padding: 0.62rem 0.75rem;
+    font-size: 1rem;
+  }
+
+  .status {
+    min-height: 1rem;
+    font-size: 0.78rem;
+    line-height: 1.2;
   }
 
   .map-card__toolbar {
+    order: 2;
     justify-content: stretch;
     flex-wrap: wrap;
+  }
+
+  .map-card {
+    display: contents;
+  }
+
+  .map-frame {
+    order: 4;
   }
 
   .settings-menu,
@@ -764,8 +845,10 @@ h1 {
   .map-tool-button {
     width: 100%;
     min-width: 0;
-    padding-inline: 0.45rem;
-    font-size: 0.72rem;
+    min-height: 1.9rem;
+    padding: 0.28rem 0.45rem;
+    font-size: 0.66rem;
+    letter-spacing: 0.03em;
   }
 
   .settings-menu__panel {
@@ -775,7 +858,13 @@ h1 {
   }
 
   .map-frame {
-    min-height: 430px;
+    min-height: clamp(340px, 58svh, 520px);
+  }
+
+  .source-note {
+    padding-top: 0.75rem;
+    font-size: 0.68rem;
+    line-height: 1.28;
   }
 
   .tracker__header {

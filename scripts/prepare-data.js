@@ -19,6 +19,96 @@ const paths = {
   outDir: join(root, 'public/data'),
 }
 
+const ENGLISH_CEREMONIAL_COUNTY_BY_ADMIN_AREA = new Map(Object.entries({
+  Barnsley: 'South Yorkshire',
+  'Bath and North East Somerset': 'Somerset',
+  Bedford: 'Bedfordshire',
+  Birmingham: 'West Midlands',
+  'Blackburn with Darwen': 'Lancashire',
+  Blackpool: 'Lancashire',
+  Bolton: 'Greater Manchester',
+  'Bournemouth, Christchurch and Poole': 'Dorset',
+  Bradford: 'West Yorkshire',
+  'Bracknell Forest': 'Berkshire',
+  'Brighton and Hove': 'East Sussex',
+  'Bristol, City of': 'Bristol',
+  Bury: 'Greater Manchester',
+  Calderdale: 'West Yorkshire',
+  'Central Bedfordshire': 'Bedfordshire',
+  'Cheshire East': 'Cheshire',
+  'Cheshire West and Chester': 'Cheshire',
+  Coventry: 'West Midlands',
+  Cumberland: 'Cumbria',
+  Darlington: 'County Durham',
+  Derby: 'Derbyshire',
+  Doncaster: 'South Yorkshire',
+  Dudley: 'West Midlands',
+  Gateshead: 'Tyne and Wear',
+  Halton: 'Cheshire',
+  Hartlepool: 'County Durham',
+  'Herefordshire, County of': 'Herefordshire',
+  'Kingston upon Hull, City of': 'East Riding of Yorkshire',
+  Kirklees: 'West Yorkshire',
+  Knowsley: 'Merseyside',
+  Leeds: 'West Yorkshire',
+  Leicester: 'Leicestershire',
+  Liverpool: 'Merseyside',
+  Luton: 'Bedfordshire',
+  Manchester: 'Greater Manchester',
+  Medway: 'Kent',
+  Middlesbrough: 'North Yorkshire',
+  'Milton Keynes': 'Buckinghamshire',
+  'Newcastle upon Tyne': 'Tyne and Wear',
+  'North East Lincolnshire': 'Lincolnshire',
+  'North Lincolnshire': 'Lincolnshire',
+  'North Northamptonshire': 'Northamptonshire',
+  'North Somerset': 'Somerset',
+  'North Tyneside': 'Tyne and Wear',
+  Nottingham: 'Nottinghamshire',
+  Oldham: 'Greater Manchester',
+  Peterborough: 'Cambridgeshire',
+  Plymouth: 'Devon',
+  Portsmouth: 'Hampshire',
+  Reading: 'Berkshire',
+  'Redcar and Cleveland': 'North Yorkshire',
+  Rochdale: 'Greater Manchester',
+  Rotherham: 'South Yorkshire',
+  Salford: 'Greater Manchester',
+  Sandwell: 'West Midlands',
+  Sefton: 'Merseyside',
+  Sheffield: 'South Yorkshire',
+  Shropshire: 'Shropshire',
+  Slough: 'Berkshire',
+  Solihull: 'West Midlands',
+  'South Gloucestershire': 'Gloucestershire',
+  'South Tyneside': 'Tyne and Wear',
+  Southampton: 'Hampshire',
+  'Southend-on-Sea': 'Essex',
+  'St. Helens': 'Merseyside',
+  Stockport: 'Greater Manchester',
+  'Stockton-on-Tees': 'County Durham',
+  'Stoke-on-Trent': 'Staffordshire',
+  Sunderland: 'Tyne and Wear',
+  Swindon: 'Wiltshire',
+  Tameside: 'Greater Manchester',
+  'Telford and Wrekin': 'Shropshire',
+  Thurrock: 'Essex',
+  Torbay: 'Devon',
+  Trafford: 'Greater Manchester',
+  Wakefield: 'West Yorkshire',
+  Walsall: 'West Midlands',
+  Warrington: 'Cheshire',
+  'West Berkshire': 'Berkshire',
+  'West Northamptonshire': 'Northamptonshire',
+  'Westmorland and Furness': 'Cumbria',
+  Wigan: 'Greater Manchester',
+  'Windsor and Maidenhead': 'Berkshire',
+  Wirral: 'Merseyside',
+  Wokingham: 'Berkshire',
+  Wolverhampton: 'West Midlands',
+  York: 'North Yorkshire',
+}))
+
 const LONDON_CODES = new Map([
   ['E63019198', { name: 'Barking and Dagenham', population: 218236 }],
   ['E63019085', { name: 'Barnet', population: 388143 }],
@@ -902,7 +992,13 @@ function countyForFeature(feature, counties) {
   const point = feature.properties.centroidBritishGrid
   const county = counties.find((candidate) => pointInFeature(point, candidate))
 
-  return county?.name ?? countryForCode(feature.properties.code)
+  if (!county) {
+    return countryForCode(feature.properties.code)
+  }
+
+  return feature.properties.country === 'England'
+    ? ENGLISH_CEREMONIAL_COUNTY_BY_ADMIN_AREA.get(county.name) ?? county.name
+    : county.name
 }
 
 function featureAliases(feature) {

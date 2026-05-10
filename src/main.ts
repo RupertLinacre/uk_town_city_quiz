@@ -27,6 +27,9 @@ const DEFAULT_CITY_LABEL_FONT_SIZE = 8
 const CITY_LABEL_MIN_FONT_SIZE = 4
 const CITY_LABEL_MAX_FONT_SIZE = 14
 const CITY_LABEL_STROKE_WIDTH = 2.4
+const MAP_MIN_ZOOM = 0.8
+const MAP_MAX_ZOOM = 6
+const DESKTOP_WHEEL_ZOOM_SPEED = 0.0056
 const APP_BASE_URL = new URL(import.meta.env.BASE_URL, window.location.href)
 
 type TrackerMode = 'alphabetical' | 'county' | 'population'
@@ -368,7 +371,6 @@ document.title = 'GB Towns and Cities Quiz'
 app.innerHTML = `
   <main class="shell shell--loading">
     <section class="loading-panel" aria-live="polite">
-      <p class="eyebrow">GB Towns & Cities</p>
       <h1>Loading built-up area boundaries</h1>
     </section>
   </main>
@@ -413,8 +415,7 @@ async function bootstrap(): Promise<void> {
       <section class="quiz">
         <div class="quiz__copy">
           <header class="hero">
-            <p class="eyebrow">GB Towns & Cities</p>
-            <h1>Name the top 100 GB built-up areas by population</h1>
+            <h1>Name the top 100 GB towns/cities</h1>
           </header>
           <section class="stats" aria-live="polite">
             <article class="stat-card">
@@ -444,9 +445,6 @@ async function bootstrap(): Promise<void> {
             />
             <p id="status" class="status" aria-live="polite"></p>
           </section>
-          <p class="source-note">
-            Boundaries: OS Open Built Up Areas. Population: ONS Census 2021 via OA21 to BUA24 best-fit lookup, plus Scottish Government Census 2022 settlements. London and Manchester are consolidated from the supplied built-up-area codes.
-          </p>
         </div>
         <section class="map-card" aria-label="Map of Great Britain with county borders and unlabelled built-up area boundaries">
           <div class="map-card__toolbar">
@@ -483,16 +481,19 @@ async function bootstrap(): Promise<void> {
         <div class="tracker__header">
           <div>
             <p class="eyebrow">Answer Board</p>
-            <h2 id="tracker-title">A-Z</h2>
+            <h2 id="tracker-title">Population</h2>
           </div>
           <div class="tracker-toggle" role="group" aria-label="Group answer board">
-            <button class="tracker-toggle__button" type="button" data-mode="alphabetical" aria-pressed="true">A-Z</button>
+            <button class="tracker-toggle__button" type="button" data-mode="alphabetical" aria-pressed="false">A-Z</button>
             <button class="tracker-toggle__button" type="button" data-mode="county" aria-pressed="false">County</button>
-            <button class="tracker-toggle__button" type="button" data-mode="population" aria-pressed="false">Population</button>
+            <button class="tracker-toggle__button" type="button" data-mode="population" aria-pressed="true">Population</button>
           </div>
         </div>
         <div id="letter-board" class="letter-board"></div>
       </section>
+      <footer class="source-note">
+        Boundaries: OS Open Built Up Areas. Population: ONS Census 2021 via OA21 to BUA24 best-fit lookup, plus Scottish Government Census 2022 settlements. London and Manchester are consolidated from the supplied built-up-area codes.
+      </footer>
     </main>
     <div id="win-overlay" class="win-overlay" hidden>
       <section class="win-overlay__card" role="dialog" aria-modal="true" aria-labelledby="win-title">
@@ -536,7 +537,7 @@ async function bootstrap(): Promise<void> {
   let showCountyNames = initialSettings.showCountyNames
   let showCityLabels = initialSettings.showCityLabels
   let cityLabelSize = initialSettings.cityLabelSize
-  let trackerMode: TrackerMode = 'alphabetical'
+  let trackerMode: TrackerMode = 'population'
   let intervalHandle = window.setInterval(tick, 250)
   let hoveredAreaCode: string | null = null
   let tooltipPoint: [number, number] | null = null
@@ -545,6 +546,10 @@ async function bootstrap(): Promise<void> {
   let mapProjection: GeoProjection = geoMercator()
   let renderMapFrameId: number | null = null
   let dragStart: { pointerId: number; pointer: [number, number]; pan: [number, number] } | null = null
+  const activeMapPointers = new Map<number, [number, number]>()
+  let pinchStart:
+    | { distance: number; center: [number, number]; zoom: number; pan: [number, number] }
+    | null = null
 
   function elapsedMilliseconds(): number {
     return quizStartedAt === null ? 0 : Math.max(0, Date.now() - quizStartedAt)
@@ -1225,6 +1230,53 @@ async function bootstrap(): Promise<void> {
     renderMap()
   }
 
+  function clampMapZoom(zoom: number): number {
+    return Math.max(MAP_MIN_ZOOM, Math.min(MAP_MAX_ZOOM, zoom))
+  }
+
+  function zoomMapAtPoint(nextZoom: number, point: [number, number]): void {
+    const clampedZoom = clampMapZoom(nextZoom)
+    const zoomRatio = clampedZoom / mapZoom
+    mapPan = [
+      point[0] - (point[0] - mapPan[0]) * zoomRatio,
+      point[1] - (point[1] - mapPan[1]) * zoomRatio,
+    ]
+    mapZoom = clampedZoom
+  }
+
+  function localMapPoint([clientX, clientY]: [number, number]): [number, number] {
+    const bounds = mapFrame.getBoundingClientRect()
+    return [clientX - bounds.left, clientY - bounds.top]
+  }
+
+  function pointerDistance(left: [number, number], right: [number, number]): number {
+    return Math.hypot(right[0] - left[0], right[1] - left[1])
+  }
+
+  function pointerCenter(left: [number, number], right: [number, number]): [number, number] {
+    return [(left[0] + right[0]) / 2, (left[1] + right[1]) / 2]
+  }
+
+  function activePointerPair(): [[number, number], [number, number]] | null {
+    const pointers = [...activeMapPointers.values()]
+    return pointers.length >= 2 ? [pointers[0], pointers[1]] : null
+  }
+
+  function beginPinch(): void {
+    const pair = activePointerPair()
+    if (!pair) {
+      pinchStart = null
+      return
+    }
+
+    pinchStart = {
+      distance: pointerDistance(pair[0], pair[1]),
+      center: localMapPoint(pointerCenter(pair[0], pair[1])),
+      zoom: mapZoom,
+      pan: [...mapPan],
+    }
+  }
+
   answerInput.addEventListener('input', maybeAcceptGuess)
   answerInput.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter') {
@@ -1267,24 +1319,27 @@ async function bootstrap(): Promise<void> {
 
   mapFrame.addEventListener('wheel', (event) => {
     event.preventDefault()
-    const factor = Math.exp(-Math.max(-80, Math.min(80, event.deltaY)) * 0.0028)
-    const nextZoom = Math.max(0.8, Math.min(6, mapZoom * factor))
-    const [pointerX, pointerY] = pointer(event, mapFrame)
-    const zoomRatio = nextZoom / mapZoom
-    mapPan = [
-      pointerX - (pointerX - mapPan[0]) * zoomRatio,
-      pointerY - (pointerY - mapPan[1]) * zoomRatio,
-    ]
-    mapZoom = nextZoom
+    const factor = Math.exp(-Math.max(-80, Math.min(80, event.deltaY)) * DESKTOP_WHEEL_ZOOM_SPEED)
+    zoomMapAtPoint(mapZoom * factor, pointer(event, mapFrame) as [number, number])
     scheduleMapRender()
   }, { passive: false })
 
   mapFrame.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0 || event.target instanceof Element && event.target.closest('.area-boundary')) {
+    const isTouchPointer = event.pointerType === 'touch'
+
+    if (!isTouchPointer && (event.button !== 0 || event.target instanceof Element && event.target.closest('.area-boundary'))) {
       return
     }
 
     mapFrame.setPointerCapture(event.pointerId)
+    activeMapPointers.set(event.pointerId, [event.clientX, event.clientY])
+
+    if (isTouchPointer && activeMapPointers.size >= 2) {
+      dragStart = null
+      beginPinch()
+      return
+    }
+
     dragStart = {
       pointerId: event.pointerId,
       pointer: [event.clientX, event.clientY],
@@ -1293,6 +1348,30 @@ async function bootstrap(): Promise<void> {
   })
 
   mapFrame.addEventListener('pointermove', (event) => {
+    if (activeMapPointers.has(event.pointerId)) {
+      activeMapPointers.set(event.pointerId, [event.clientX, event.clientY])
+    }
+
+    const pair = activePointerPair()
+    if (pinchStart && pair) {
+      const nextDistance = pointerDistance(pair[0], pair[1])
+      if (pinchStart.distance > 0) {
+        const nextZoom = clampMapZoom(pinchStart.zoom * (nextDistance / pinchStart.distance))
+        const startContentPoint = [
+          (pinchStart.center[0] - pinchStart.pan[0]) / pinchStart.zoom,
+          (pinchStart.center[1] - pinchStart.pan[1]) / pinchStart.zoom,
+        ]
+        const nextCenter = localMapPoint(pointerCenter(pair[0], pair[1]))
+        mapPan = [
+          nextCenter[0] - startContentPoint[0] * nextZoom,
+          nextCenter[1] - startContentPoint[1] * nextZoom,
+        ]
+        mapZoom = nextZoom
+        scheduleMapRender()
+      }
+      return
+    }
+
     if (!dragStart) {
       return
     }
@@ -1309,7 +1388,27 @@ async function bootstrap(): Promise<void> {
       mapFrame.releasePointerCapture(event.pointerId)
     }
 
-    dragStart = null
+    if (activeMapPointers.has(event.pointerId)) {
+      activeMapPointers.delete(event.pointerId)
+    }
+
+    if (mapFrame.hasPointerCapture(event.pointerId)) {
+      mapFrame.releasePointerCapture(event.pointerId)
+    }
+
+    const remainingPointers = [...activeMapPointers.entries()]
+    if (remainingPointers.length === 1 && pinchStart) {
+      const [pointerId, pointerPosition] = remainingPointers[0]
+      dragStart = {
+        pointerId,
+        pointer: pointerPosition,
+        pan: [...mapPan],
+      }
+    } else {
+      dragStart = null
+    }
+
+    pinchStart = null
   })
 
   mapFrame.addEventListener('pointercancel', (event) => {
@@ -1317,7 +1416,16 @@ async function bootstrap(): Promise<void> {
       mapFrame.releasePointerCapture(event.pointerId)
     }
 
+    if (activeMapPointers.has(event.pointerId)) {
+      activeMapPointers.delete(event.pointerId)
+    }
+
+    if (mapFrame.hasPointerCapture(event.pointerId)) {
+      mapFrame.releasePointerCapture(event.pointerId)
+    }
+
     dragStart = null
+    pinchStart = null
   })
 
   window.addEventListener('resize', scheduleMapRender)
