@@ -23,9 +23,9 @@ const COUNTY_LABEL_WIDTH_RATIO = 0.72
 const COUNTY_LABEL_HEIGHT_RATIO = 0.68
 const COUNTY_LABEL_LINE_HEIGHT = 1.05
 const COUNTY_LABEL_CHARACTER_WIDTH = 0.58
-const DEFAULT_CITY_LABEL_FONT_SIZE = 12.5
-const CITY_LABEL_MIN_FONT_SIZE = 8
-const CITY_LABEL_MAX_FONT_SIZE = 18
+const DEFAULT_CITY_LABEL_FONT_SIZE = 8
+const CITY_LABEL_MIN_FONT_SIZE = 4
+const CITY_LABEL_MAX_FONT_SIZE = 14
 const CITY_LABEL_STROKE_WIDTH = 2.4
 
 type TrackerMode = 'alphabetical' | 'county' | 'population'
@@ -1002,7 +1002,7 @@ async function bootstrap(): Promise<void> {
 
     viewport
       .selectAll<SVGTextElement, BuiltUpAreaFeature>('text.city-label')
-      .data(showCityLabels && !quizFinished ? visibleAreaFeatures().filter((area) => {
+      .data(showCityLabels ? visibleAreaFeatures().filter((area) => {
         const code = area.properties.code
         return solvedAreaCodes.has(code) || revealedAreaCodes.has(code) || extraFoundAreaCodes.has(code)
       }) : [], (area) => area.properties.code)
