@@ -27,6 +27,7 @@ const DEFAULT_CITY_LABEL_FONT_SIZE = 8
 const CITY_LABEL_MIN_FONT_SIZE = 4
 const CITY_LABEL_MAX_FONT_SIZE = 14
 const CITY_LABEL_STROKE_WIDTH = 2.4
+const APP_BASE_URL = new URL(import.meta.env.BASE_URL, window.location.href)
 
 type TrackerMode = 'alphabetical' | 'county' | 'population'
 
@@ -99,10 +100,11 @@ function requireElement<T extends Element>(selector: string): T {
 }
 
 async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(path)
+  const url = new URL(path, APP_BASE_URL)
+  const response = await fetch(url)
 
   if (!response.ok) {
-    throw new Error(`Failed to load ${path}: ${response.status}`)
+    throw new Error(`Failed to load ${url.pathname}: ${response.status}`)
   }
 
   return response.json() as Promise<T>
@@ -366,9 +368,9 @@ app.innerHTML = `
 
 async function bootstrap(): Promise<void> {
   const [areaData, countryBoundaryData, countyBoundaryData] = await Promise.all([
-    fetchJson<FeatureCollection<BuiltUpAreaFeature>>('/data/built-up-areas.geojson'),
-    fetchJson<FeatureCollection<BoundaryFeature>>('/data/gb-country-boundaries.geojson'),
-    fetchJson<FeatureCollection<BoundaryFeature>>('/data/gb-county-boundaries.geojson'),
+    fetchJson<FeatureCollection<BuiltUpAreaFeature>>('data/built-up-areas.geojson'),
+    fetchJson<FeatureCollection<BoundaryFeature>>('data/gb-country-boundaries.geojson'),
+    fetchJson<FeatureCollection<BoundaryFeature>>('data/gb-county-boundaries.geojson'),
   ])
 
   const areas = areaData.features
