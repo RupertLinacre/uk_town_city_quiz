@@ -114,6 +114,14 @@ function formatNumber(value: number | null): string {
   return value === null ? 'population unavailable' : new Intl.NumberFormat('en-GB').format(value)
 }
 
+function formatAreaDetails(area: BuiltUpAreaFeature): string {
+  return `County: ${area.properties.county}. Population: ${formatNumber(area.properties.population)}.`
+}
+
+function isNorthernIrelandCounty(feature: BoundaryFeature): boolean {
+  return feature.properties?.CTYUA23CD?.startsWith('N') ?? false
+}
+
 function formatTime(milliseconds: number): string {
   const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000))
   const minutes = Math.floor(totalSeconds / 60)
@@ -372,6 +380,7 @@ async function bootstrap(): Promise<void> {
     fetchJson<FeatureCollection<BoundaryFeature>>('data/gb-country-boundaries.geojson'),
     fetchJson<FeatureCollection<BoundaryFeature>>('data/gb-county-boundaries.geojson'),
   ])
+  const visibleCountyBoundaries = countyBoundaryData.features.filter((feature) => !isNorthernIrelandCounty(feature))
 
   const areas = areaData.features
   const topAreas = areas
@@ -436,7 +445,7 @@ async function bootstrap(): Promise<void> {
             <p id="status" class="status" aria-live="polite"></p>
           </section>
           <p class="source-note">
-            Boundaries: OS Open Built Up Areas. Population: ONS Census 2021 via OA21 to BUA24 best-fit lookup, plus Scottish Government Census 2022 settlements. London is consolidated from the supplied built-up-area codes.
+            Boundaries: OS Open Built Up Areas. Population: ONS Census 2021 via OA21 to BUA24 best-fit lookup, plus Scottish Government Census 2022 settlements. London and Manchester are consolidated from the supplied built-up-area codes.
           </p>
         </div>
         <section class="map-card" aria-label="Map of Great Britain with county borders and unlabelled built-up area boundaries">
@@ -639,6 +648,7 @@ async function bootstrap(): Promise<void> {
   function renderTracker(): void {
     letterBoard.replaceChildren()
     slotByAreaCode.clear()
+    letterBoard.dataset.mode = trackerMode
 
     const groups = trackerGroups()
     trackerTitle.textContent = trackerMode === 'alphabetical'
@@ -870,7 +880,7 @@ async function bootstrap(): Promise<void> {
         const canShowName = solvedAreaCodes.has(code) || revealedAreaCodes.has(code) || extraFoundAreaCodes.has(code)
         const hasClue = cluedAreaCodes.has(code)
         const label = canShowName
-          ? `${area.properties.name} · ${formatNumber(area.properties.population)}`
+          ? `${area.properties.name} · ${area.properties.county} · ${formatNumber(area.properties.population)}`
           : hasClue
             ? `Starts with ${area.properties.name[0]?.toUpperCase() ?? '?'} · Population ${formatNumber(area.properties.population)}`
           : `Population ${formatNumber(area.properties.population)}`
@@ -941,7 +951,7 @@ async function bootstrap(): Promise<void> {
 
     viewport
       .selectAll<SVGTextElement, BoundaryFeature>('text.county-label')
-      .data(showCountyNames ? countyBoundaryData.features : [], (feature) => feature.properties?.CTYUA23CD ?? '')
+      .data(showCountyNames ? visibleCountyBoundaries : [], (feature) => feature.properties?.CTYUA23CD ?? '')
       .join('text')
       .attr('class', 'county-label')
       .attr('pointer-events', 'none')
@@ -952,7 +962,7 @@ async function bootstrap(): Promise<void> {
 
     viewport
       .selectAll<SVGPathElement, BoundaryFeature>('path.county-boundary')
-      .data(countyBoundaryData.features, (feature) => feature.properties?.CTYUA23CD ?? '')
+      .data(visibleCountyBoundaries, (feature) => feature.properties?.CTYUA23CD ?? '')
       .join('path')
       .attr('class', 'county-boundary')
       .attr('data-county', (feature) => feature.properties?.CTYUA23NM ?? '')
@@ -1021,6 +1031,29 @@ async function bootstrap(): Promise<void> {
     renderMapTooltip(width, height)
   }
 
+  function focusMapOnArea(area: BuiltUpAreaFeature): void {
+    const bounds = mapFrame.getBoundingClientRect()
+    const width = Math.max(1, bounds.width)
+    const height = Math.max(1, bounds.height)
+    const mapPath = geoPath(mapProjection)
+    const [[x0, y0], [x1, y1]] = mapPath.bounds(area as unknown as GeoPermissibleObjects)
+    const areaWidth = Math.max(1, x1 - x0)
+    const areaHeight = Math.max(1, y1 - y0)
+    const targetZoom = Math.max(
+      1.8,
+      Math.min(6, width * 0.38 / areaWidth, height * 0.38 / areaHeight),
+    )
+    const centerX = (x0 + x1) / 2
+    const centerY = (y0 + y1) / 2
+
+    mapZoom = targetZoom
+    mapPan = [
+      width / 2 - centerX * targetZoom,
+      height / 2 - centerY * targetZoom,
+    ]
+    renderMap()
+  }
+
   function scheduleMapRender(): void {
     if (renderMapFrameId !== null) {
       return
@@ -1058,8 +1091,8 @@ async function bootstrap(): Promise<void> {
 
       extraFoundAreaCodes.add(areaCode)
       hoveredAreaCode = areaCode
-      renderMap()
-      renderStatus(`${area.properties.name} accepted, but it is outside the top 100.`, 'success')
+      focusMapOnArea(area)
+      renderStatus(`${area.properties.name} accepted, but it is outside the top 100. ${formatAreaDetails(area)}`, 'success')
       return
     }
 
@@ -1076,7 +1109,12 @@ async function bootstrap(): Promise<void> {
 
     applySlotState(areaCode)
     renderScore()
-    scheduleMapRender()
+
+    if (source === 'answer') {
+      focusMapOnArea(area)
+    } else {
+      scheduleMapRender()
+    }
 
     if (solvedAreaCodes.size === topAreas.length) {
       finishQuiz(true)
@@ -1085,8 +1123,8 @@ async function bootstrap(): Promise<void> {
 
     renderStatus(
       source === 'reveal'
-        ? `${area.properties.name} revealed.`
-        : `${area.properties.name} accepted.`,
+        ? `${area.properties.name} revealed. ${formatAreaDetails(area)}`
+        : `${area.properties.name} accepted. ${formatAreaDetails(area)}`,
       source === 'reveal' ? 'neutral' : 'success',
     )
   }

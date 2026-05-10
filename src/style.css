@@ -586,23 +586,40 @@ h1 {
   gap: 0.75rem;
 }
 
+.letter-board[data-mode='county'] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .letter-section {
   display: grid;
-  grid-template-columns: 1.6rem minmax(0, 1fr);
-  gap: 0.55rem;
+  grid-template-columns: minmax(1.7rem, max-content) minmax(0, 1fr);
+  gap: 0.62rem;
   align-items: start;
   min-height: 2.25rem;
-  padding: 0.58rem;
+  padding: 0.54rem;
   border: 1px solid rgba(46, 74, 88, 0.1);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.54);
 }
 
+.letter-board[data-mode='county'] .letter-section {
+  grid-template-columns: minmax(7.25rem, 9.5rem) minmax(0, 1fr);
+}
+
 .letter-section h3 {
   color: var(--accent-strong);
-  font-size: 1.05rem;
-  line-height: 2rem;
+  font-size: 0.95rem;
+  line-height: 1.2;
   text-align: center;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.letter-board[data-mode='county'] .letter-section h3 {
+  color: #704705;
+  font-size: 0.74rem;
+  line-height: 1.18;
+  text-align: left;
 }
 
 .letter-section__list {
@@ -617,15 +634,17 @@ h1 {
 
 .town-slot {
   width: var(--slot-width);
+  max-width: 100%;
   min-height: 2rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.28rem 0.48rem;
+  padding: 0.26rem 0.42rem;
   border-radius: 8px;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   line-height: 1.1;
   text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .town-slot--empty {
@@ -709,6 +728,10 @@ h1 {
   .letter-board {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .letter-board[data-mode='county'] {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 620px) {
@@ -774,7 +797,11 @@ h1 {
   }
 
   .letter-section {
-    grid-template-columns: 1.45rem minmax(0, 1fr);
+    grid-template-columns: minmax(1.45rem, max-content) minmax(0, 1fr);
+  }
+
+  .letter-board[data-mode='county'] .letter-section {
+    grid-template-columns: minmax(5.8rem, 7rem) minmax(0, 1fr);
   }
 
   .town-slot {

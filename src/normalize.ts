@@ -5,6 +5,7 @@ export function normalizeAnswer(value: string): string {
     .replace(/\p{Diacritic}/gu, '')
     .replace(/&/g, ' and ')
     .replace(/\bst[.]?\b/g, 'saint')
+    .replace(/['’`]/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/^the\s+/g, '')
     .replace(/\s+/g, ' ')

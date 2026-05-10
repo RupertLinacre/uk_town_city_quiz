@@ -56,6 +56,25 @@ const LONDON_CODES = new Map([
 ])
 
 const LONDON_POPULATION = [...LONDON_CODES.values()].reduce((sum, row) => sum + row.population, 0)
+const ENGLISH_CONSOLIDATIONS = [
+  {
+    code: 'E63015571',
+    name: 'Manchester',
+    alternateName: null,
+    population: 561672,
+    populationYear: 2021,
+    populationSource: 'User-provided Manchester built-up area consolidation',
+    populationSourceCode: 'E63015571+E63015681',
+    aliases: ['Wythenshawe'],
+    componentCodes: [
+      'E63015571',
+      'E63015681',
+    ],
+  },
+]
+const ENGLISH_CONSOLIDATION_BY_CODE = new Map(
+  ENGLISH_CONSOLIDATIONS.flatMap((group) => group.componentCodes.map((code) => [code, group])),
+)
 const SCOTTISH_CONSOLIDATIONS = [
   {
     code: 'S450GREATERGLASGOW',
@@ -213,6 +232,7 @@ function normalizeName(value) {
     .replace(/\p{Diacritic}/gu, '')
     .replace(/&/g, ' and ')
     .replace(/\bst[.]?\b/g, 'saint')
+    .replace(/['’`]/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/^the\s+/g, '')
     .replace(/\s+/g, ' ')
@@ -913,6 +933,7 @@ function main() {
   const counties = createCountyLookup()
   const rawFeatures = []
   const londonGeometries = []
+  const englishConsolidationGeometries = new Map(ENGLISH_CONSOLIDATIONS.map((group) => [group.code, []]))
   const scottishConsolidationGeometries = new Map(SCOTTISH_CONSOLIDATIONS.map((group) => [group.code, []]))
   const geometryStats = {
     inputPoints: 0,
@@ -929,6 +950,13 @@ function main() {
 
     if (LONDON_CODES.has(code)) {
       londonGeometries.push(geometryBritishGrid)
+      continue
+    }
+
+    const englishConsolidation = ENGLISH_CONSOLIDATION_BY_CODE.get(code)
+
+    if (englishConsolidation) {
+      englishConsolidationGeometries.get(englishConsolidation.code)?.push(geometryBritishGrid)
       continue
     }
 
@@ -986,6 +1014,39 @@ function main() {
     },
     geometryBritishGrid: londonGeometry,
   })
+
+  for (const group of ENGLISH_CONSOLIDATIONS) {
+    const geometries = englishConsolidationGeometries.get(group.code) ?? []
+
+    if (geometries.length !== group.componentCodes.length) {
+      console.warn(`Expected ${group.componentCodes.length} ${group.name} components, found ${geometries.length}`)
+    }
+
+    const geometry = {
+      type: 'MultiPolygon',
+      coordinates: geometries.flatMap((componentGeometry) =>
+        componentGeometry.type === 'Polygon' ? [componentGeometry.coordinates] : componentGeometry.coordinates,
+      ),
+    }
+
+    rawFeatures.push({
+      type: 'Feature',
+      properties: {
+        code: group.code,
+        name: group.name,
+        alternateName: group.alternateName,
+        areaHectares: geometries.reduce((total, componentGeometry) => total + Math.abs(totalGeometryArea(componentGeometry)) / 10000, 0),
+        population: group.population,
+        populationYear: group.populationYear,
+        populationSource: group.populationSource,
+        populationSourceCode: group.populationSourceCode,
+        country: 'England',
+        centroidBritishGrid: largestRingCentroid(geometry),
+        manualAliases: group.aliases,
+      },
+      geometryBritishGrid: geometry,
+    })
+  }
 
   for (const group of SCOTTISH_CONSOLIDATIONS) {
     const geometries = scottishConsolidationGeometries.get(group.code) ?? []
