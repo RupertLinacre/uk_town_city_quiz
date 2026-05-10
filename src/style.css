@@ -392,7 +392,7 @@ h1 {
 
 .osm-attribution {
   position: absolute;
-  right: 0.55rem;
+  left: 0.55rem;
   bottom: 0.45rem;
   z-index: 2;
   display: none;
@@ -407,6 +407,47 @@ h1 {
 
 .map-frame[data-tiles-visible='true'] .osm-attribution {
   display: inline-flex;
+}
+
+.population-map-key {
+  position: absolute;
+  right: 0.55rem;
+  bottom: 0.55rem;
+  z-index: 2;
+  width: min(11.5rem, calc(100% - 1.1rem));
+  display: grid;
+  gap: 0.28rem;
+  padding: 0.45rem 0.52rem;
+  border: 1px solid rgba(46, 74, 88, 0.18);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #1f2d36;
+  box-shadow: 0 10px 28px rgba(61, 90, 104, 0.16);
+  font-size: 0.68rem;
+  font-weight: 850;
+  pointer-events: none;
+}
+
+.population-map-key__title {
+  color: var(--ink-soft);
+  line-height: 1;
+}
+
+.population-map-key__scale {
+  height: 0.58rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #0d0887 0%, #7e03a8 26%, #cc4778 52%, #f89540 76%, #f0f921 100%);
+  box-shadow: inset 0 0 0 1px rgba(31, 45, 54, 0.16);
+}
+
+.population-map-key__labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--ink-muted);
+  font-size: 0.62rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .uk-map {
@@ -563,6 +604,32 @@ h1 {
 .tracker__header h2 {
   color: var(--ink-soft);
   font-size: 1.1rem;
+}
+
+.tracker-summary {
+  min-width: min(100%, 16rem);
+  display: grid;
+  gap: 0.16rem;
+  padding: 0.56rem 0.68rem;
+  border: 1px solid rgba(34, 138, 79, 0.18);
+  border-radius: 8px;
+  background: rgba(225, 247, 234, 0.58);
+}
+
+.tracker-summary__label,
+.tracker-summary__meta {
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+  font-weight: 780;
+  line-height: 1.1;
+}
+
+.tracker-summary__value {
+  color: #155734;
+  font-size: clamp(1.1rem, 2vw, 1.45rem);
+  line-height: 1;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
 }
 
 .tracker-toggle {
@@ -942,6 +1009,11 @@ h1 {
   .tracker__header {
     align-items: stretch;
     flex-direction: column;
+    gap: 0.65rem;
+  }
+
+  .tracker-summary {
+    min-width: 0;
   }
 
   .tracker-toggle {
@@ -967,5 +1039,21 @@ h1 {
 
   .town-slot {
     max-width: 100%;
+  }
+
+  .population-map-key {
+    right: 0.35rem;
+    bottom: 0.35rem;
+    width: min(9.8rem, calc(100% - 0.7rem));
+    padding: 0.36rem 0.4rem;
+    font-size: 0.6rem;
+  }
+
+  .population-map-key__scale {
+    height: 0.48rem;
+  }
+
+  .population-map-key__labels {
+    font-size: 0.54rem;
   }
 }

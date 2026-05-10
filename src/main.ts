@@ -33,6 +33,7 @@ const MAP_MAX_ZOOM = 6
 const DESKTOP_WHEEL_ZOOM_SPEED = 0.0056
 const APP_BASE_URL = new URL(import.meta.env.BASE_URL, window.location.href)
 const UNKNOWN_POPULATION_COLOR = '#8c969c'
+const GB_TOTAL_POPULATION = 65_034_142
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -123,6 +124,17 @@ async function fetchJson<T>(path: string): Promise<T> {
 
 function formatNumber(value: number | null): string {
   return value === null ? 'population unavailable' : new Intl.NumberFormat('en-GB').format(value)
+}
+
+function formatPopulationTotal(value: number): string {
+  return new Intl.NumberFormat('en-GB').format(value)
+}
+
+function formatPopulationPercentage(value: number): string {
+  return `${new Intl.NumberFormat('en-GB', {
+    maximumFractionDigits: 1,
+    minimumFractionDigits: value > 0 && value < 0.1 ? 2 : 1,
+  }).format(value)}%`
 }
 
 function formatAreaDetails(area: BuiltUpAreaFeature): string {
@@ -492,6 +504,14 @@ async function bootstrap(): Promise<void> {
           </div>
           <div id="map-frame" class="map-frame">
             <a class="osm-attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">&copy; OpenStreetMap contributors</a>
+            <div class="population-map-key" aria-label="Map colour key for unanswered town and city population">
+              <span class="population-map-key__title">Population</span>
+              <span class="population-map-key__scale" aria-hidden="true"></span>
+              <span class="population-map-key__labels">
+                <span id="population-key-min"></span>
+                <span id="population-key-max"></span>
+              </span>
+            </div>
           </div>
         </section>
       </section>
@@ -500,6 +520,11 @@ async function bootstrap(): Promise<void> {
           <div>
             <p class="eyebrow">Answer Board</p>
             <h2 id="tracker-title">Population</h2>
+          </div>
+          <div class="tracker-summary" aria-live="polite">
+            <span class="tracker-summary__label">Answered population</span>
+            <strong id="answered-population-total" class="tracker-summary__value">0</strong>
+            <span id="answered-population-percent" class="tracker-summary__meta">0.0% of GB</span>
           </div>
           <div class="tracker-toggle" role="group" aria-label="Group answer board">
             <button class="tracker-toggle__button" type="button" data-mode="alphabetical" aria-pressed="false">A-Z</button>
@@ -530,6 +555,8 @@ async function bootstrap(): Promise<void> {
   const answerInput = requireElement<HTMLInputElement>('#guess-input')
   const giveUpButton = requireElement<HTMLButtonElement>('#give-up-button')
   const resetMapButton = requireElement<HTMLButtonElement>('#reset-map-button')
+  const populationKeyMinElement = requireElement<HTMLElement>('#population-key-min')
+  const populationKeyMaxElement = requireElement<HTMLElement>('#population-key-max')
   const extraAnswerLimitInput = requireElement<HTMLInputElement>('#extra-answer-limit-input')
   const showCountyNamesInput = requireElement<HTMLInputElement>('#show-county-names-input')
   const showCityLabelsInput = requireElement<HTMLInputElement>('#show-city-labels-input')
@@ -538,6 +565,8 @@ async function bootstrap(): Promise<void> {
   const mapFrame = requireElement<HTMLElement>('#map-frame')
   const letterBoard = requireElement<HTMLElement>('#letter-board')
   const trackerTitle = requireElement<HTMLElement>('#tracker-title')
+  const answeredPopulationTotalElement = requireElement<HTMLElement>('#answered-population-total')
+  const answeredPopulationPercentElement = requireElement<HTMLElement>('#answered-population-percent')
   const trackerToggleButtons = [...document.querySelectorAll<HTMLButtonElement>('.tracker-toggle__button')]
   const winOverlay = requireElement<HTMLElement>('#win-overlay')
   const winMessageElement = requireElement<HTMLElement>('#win-message')
@@ -576,6 +605,24 @@ async function bootstrap(): Promise<void> {
   function renderScore(): void {
     scoreElement.textContent = `${solvedAreaCodes.size}/${topAreas.length}`
     remainingElement.textContent = `${topAreas.length - solvedAreaCodes.size} left`
+  }
+
+  function answeredPopulationTotal(): number {
+    return topAreas.reduce((sum, area) => {
+      const code = area.properties.code
+
+      return solvedAreaCodes.has(code) && !revealedAreaCodes.has(code)
+        ? sum + (area.properties.population ?? 0)
+        : sum
+    }, 0)
+  }
+
+  function renderAnsweredPopulation(): void {
+    const total = answeredPopulationTotal()
+    const percentage = (total / GB_TOTAL_POPULATION) * 100
+
+    answeredPopulationTotalElement.textContent = formatPopulationTotal(total)
+    answeredPopulationPercentElement.textContent = `${formatPopulationPercentage(percentage)} of GB`
   }
 
   function renderStatus(message: string, tone: 'neutral' | 'success' | 'muted' = 'neutral'): void {
@@ -1187,6 +1234,7 @@ async function bootstrap(): Promise<void> {
 
     applySlotState(areaCode)
     renderScore()
+    renderAnsweredPopulation()
 
     if (source === 'answer') {
       focusMapOnArea(area)
@@ -1276,6 +1324,7 @@ async function bootstrap(): Promise<void> {
       : `Revealed the board at ${elapsed}.`
 
     renderScore()
+    renderAnsweredPopulation()
     renderMap()
     renderStatus(message, celebrate ? 'success' : 'muted')
     winMessageElement.textContent = message
@@ -1515,8 +1564,11 @@ async function bootstrap(): Promise<void> {
   showCountyNamesInput.checked = showCountyNames
   showCityLabelsInput.checked = showCityLabels
   syncCityLabelSizeControl()
+  populationKeyMinElement.textContent = formatPopulationTotal(minTopAreaPopulation)
+  populationKeyMaxElement.textContent = formatPopulationTotal(maxTopAreaPopulation)
   syncSettingsUrl()
   renderScore()
+  renderAnsweredPopulation()
   renderTracker()
   renderStatus('')
   renderMap()
